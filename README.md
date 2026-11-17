@@ -1,5 +1,32 @@
 # UwU Logs
 
+## Updated design
+
+A local raid analytics interface for WoW 3.3.5a: a raid library, damage and
+healing summaries, readable player tables, and a simple combat-log import flow.
+
+### Raid library
+
+Recent reports show the raid name, author, server, start time and player count.
+
+![Raid library with raid names and recent reports](showcase/redesign/raid-library.jpg)
+
+### Raid report
+
+Damage, effective healing and participants at a glance, with controls for
+switching damage and healing views and opening individual player details.
+
+![Raid report with damage and healing summaries and player rankings](showcase/redesign/raid-report.jpg)
+
+### Combat-log import
+
+Automatic recording uses DBM boss encounters. Import and 24-hour cleanup run
+after WoW closes; manual import is also available.
+
+![Local combat-log import page](showcase/redesign/log-import.jpg)
+
+---
+
 <https://uwu-logs.xyz/>
 
 UwU Logs is a World of Warcraft combat log parser.
