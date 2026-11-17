@@ -1,117 +1,49 @@
 {% extends "layout_report.html" %}
-
 {% block scripts_head %}
-<script src="/static/timeline.js?v=250124-1" async defer></script>
-{% endblock scripts_head %}
-
-{% block add_css_file %}
-<link rel="stylesheet" type="text/css" href="/static/timeline.css?v=241106-1">
-{% endblock add_css_file %}
-
+<script src="/static/timeline-model.js?v=3" defer></script>
+<script src="/static/timeline-workspace.js?v=3" defer></script>
+{% endblock %}
+{% block add_css_file %}<link rel="stylesheet" href="/static/timeline-workspace.css?v=1">{% endblock %}
 {% block the_main %}
-<main>
-<section id="player-nav-wrap">
-  <ul id="player-nav">
-    <li><a href="/reports/{{ REPORT_ID }}/player/{{ SOURCE_NAME }}/{{ QUERY }}">Урон</a></li>
-    <li><a href="/reports/{{ REPORT_ID }}/heal/{{ SOURCE_NAME }}/{{ QUERY }}">Лечение</a></li>
-    <li><a href="/reports/{{ REPORT_ID }}/taken/{{ SOURCE_NAME }}/{{ QUERY }}">Полученный урон</a></li>
-    <li><a href="/reports/{{ REPORT_ID }}/healed/{{ SOURCE_NAME }}/{{ QUERY }}">Полученное лечение</a></li>
-    <li><a href="/reports/{{ REPORT_ID }}/casts/{{ SOURCE_NAME }}/{{ QUERY }}">Таймлайн</a></li>
-    <li id="graph-controls">
-      <section id="flag-filter-wrap">
-        <div>События</div>
-        <ul id="flag-filter">
-          {% for flag in FLAG_ORDER %}
-          <li id="{{ flag }}" style="display: none;">
-            <input type="color" class="flag-color-picker">
-            <input id="{{ flag }}_CHECKBOX" type="checkbox" class="flag-checkbox" checked>
-            <label class="tab" for="{{ flag }}_CHECKBOX">{{ flag }}</label>
-          </li>
-          {% endfor %}
-        </ul>
-      </section>
-      <span>Масштаб:</span>
-      <input id="spell-timeline-mult" type="range" min="1" max="100" value="3">
-      <span id="spell-timeline-mult-label">3x</span>
-      <input id="spell-toggle-hidden" type="checkbox">
-      <label for="spell-toggle-hidden">Скрытые</label>
-    </li>
-  </ul>
-</section>
-<section id="boss-reminder" style="display: none;">Выбери попытку босса в списке слева, чтобы увидеть таймлайн.</section>
-<section id="tabs-wrap" style="display: none;">
-  <button id="add-character">+</button>
-</section>
-<section class="table-wrap table-spells" style="display: none;">
-  <div id="casts-section-wrap">
-    <div class="casts-header sticky-column">
-      <select id="before-pull">
-        <option value="0">До пулла</option>
-        <option value="5">5</option>
-        <option value="10">10</option>
-        <option value="15">15</option>
-        <option value="30">30</option>
-        <option value="60">60</option>
-        <option value="120">120</option>
-        <option value="180">180</option>
-      </select>
-    </div>
-    <div id="timeline-ruler" class="casts-header">
-      <div id="fight-start"></div>
-    </div>
-    <div id="click-reminder">
-      <p>
-        Нажми на таймлайн, чтобы посмотреть события, цели и время действия аур.
-      </p>
-    </div>
-    <div id="spells-fav">
-      <aside id="spells-fav-reminder">
-        <p>
-          Добавь способности в сравнение кнопкой ▲ рядом с названием.
-        </p>
-        <p>
-          Кнопка ✖ скрывает способность из списка.
-        </p>
-      </aside>
-    </div>
+<main id="timeline-app" data-report="{{ REPORT_ID }}" data-player="{{ SOURCE_NAME }}">
+  <div class="tl-heading"><div><span class="tl-eyebrow">Таймлайн игрока</span><h2>{{ SOURCE_NAME }}</h2></div>
+    <label class="tl-player-label">Игрок <select id="tl-player" aria-label="Игрок таймлайна"><option>{{ SOURCE_NAME }}</option></select></label>
   </div>
-</section>
-<aside id="the-tooltip" style="display: none">
-  <p id="tooltip-time"></p>
-  <p id="tooltip-flag"></p>
-  <p id="tooltip-source"></p>
-  <p id="tooltip-target"></p>
-  <p id="tooltip-data"></p>
-</aside>
-<aside id="aura-controls" style="display: none;">
-  <button id="button-fav">▲</button>
-  <button id="button-hide">✖</button>
-  <button id="button-unhide">✚</button>
-</aside>
-
-<dialog id="add-character-dialog">
-  <div id="add-character-dialog-wrap">
-    <div id="dialog-msg" style="visibility: hidden;">Report wasn't found</div>
-    <div id="input-report-id-wrap">
-      <input id="input-report-id" type="text" placeholder="Input report ID">
-      <button id="fetch-report-slices" type="button">Load</button>
-    </div>
-    <div id="select-attempts-wrap">
-      <span>Select attempt:</span>
-      <select id="select-attempts"></select>
-    </div>
-    <div id="select-players-wrap">
-      <span>Select player:</span>
-      <select id="select-players"></select>
-    </div>
-    <div>
-      <button id="button-cancel">Cancel</button>
-      <button id="button-confirm" value="default">Add Character</button>
-    </div>
+  <div class="tl-player-nav" aria-label="Анализ игрока">
+    <a href="/reports/{{ REPORT_ID }}/player/{{ SOURCE_NAME }}/{{ QUERY }}">Урон</a>
+    <a href="/reports/{{ REPORT_ID }}/heal/{{ SOURCE_NAME }}/{{ QUERY }}">Лечение</a>
+    <a href="/reports/{{ REPORT_ID }}/taken/{{ SOURCE_NAME }}/{{ QUERY }}">Полученный урон</a>
+    <a class="active" aria-current="page" href="/reports/{{ REPORT_ID }}/casts/{{ SOURCE_NAME }}/{{ QUERY }}">Таймлайн</a>
   </div>
-</dialog>
-
-<div id="main-fade"></div>
-
+  <div id="tl-status" role="status">Загрузка событий боя…</div>
+  <button type="button" id="tl-retry" hidden>Повторить загрузку</button>
+  <section id="tl-workspace" hidden>
+    <div class="tl-controls">
+      <div class="tl-layers" role="group" aria-label="Дорожки таймлайна">
+        <button type="button" data-layer="casts" aria-pressed="true">Касты</button>
+        <button type="button" data-layer="buffs" aria-pressed="true">Бафы</button>
+        <button type="button" data-layer="debuffs" aria-pressed="false">Дебафы</button>
+        <button type="button" data-layer="damage" aria-pressed="true">Урон</button>
+        <button type="button" data-layer="healing" aria-pressed="false">Лечение</button>
+      </div>
+      <input type="search" id="tl-search" placeholder="Найти способность" aria-label="Найти способность">
+    </div>
+    <div class="tl-summary"><span id="tl-summary"></span><span>Обзор урона · DPS за секунду</span></div>
+    <canvas id="tl-overview" height="86" aria-label="Обзор урона за бой. Выдели отрезок мышью для приближения."></canvas>
+    <div class="tl-zoom-controls">
+      <button type="button" id="tl-fit">Весь бой</button>
+      <button type="button" id="tl-zoom-out" aria-label="Уменьшить масштаб">−</button>
+      <input type="range" id="tl-zoom" min="1" max="20" step="0.1" value="1" aria-label="Масштаб таймлайна">
+      <button type="button" id="tl-zoom-in" aria-label="Увеличить масштаб">+</button>
+      <span id="tl-window"></span><span class="tl-help">Выдели отрезок для приближения · Shift + колесо — прокрутка</span>
+    </div>
+    <div id="tl-board" tabindex="0" role="region" aria-label="Дорожки событий. Стрелки перемещают курсор, Escape сбрасывает масштаб."><div id="tl-tracks"></div></div>
+    <p id="tl-empty" hidden>Нет способностей для выбранных дорожек и поиска.</p>
+    <p class="tl-data-note">Сплошные полосы — длительность ауры; пунктир и ≈ — начало отсутствует в логе. Ауры без событий в записи восстановить нельзя.</p>
+    <div class="tl-event-heading"><h3>События <span id="tl-event-time"></span></h3><button type="button" id="tl-clear-cursor" hidden>Снять курсор</button></div>
+    <p id="tl-event-hint">Наведи на событие для деталей. Нажми на дорожку, чтобы закрепить время и увидеть события рядом.</p>
+    <div class="tl-events-wrap"><table class="tl-events"><thead><tr><th>Время</th><th>Событие</th><th>Способность</th><th>Источник → цель</th><th>Значение</th></tr></thead><tbody id="tl-events-body"></tbody></table></div>
+  </section>
+  <div id="tl-tooltip" role="tooltip" hidden></div>
 </main>
-{% endblock the_main %}
+{% endblock %}

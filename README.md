@@ -18,6 +18,23 @@ switching damage and healing views and opening individual player details.
 
 ![Raid report with damage and healing summaries and player rankings](showcase/redesign/raid-report.jpg)
 
+### Player timeline
+
+The timeline separates casts, buffs, debuffs, outgoing damage and healing into
+switchable tracks. Select a range in the DPS overview or drag across a track
+to zoom in; use the horizontal scrollbar or Shift + wheel to move through time.
+Spell labels and the time ruler stay visible while scrolling.
+
+![Player timeline with separate cast tracks and a damage overview](showcase/redesign/timeline-overview.jpg)
+
+Search for an ability, hover events for details, or click to pin a shared time
+cursor. The event table shows nearby casts/hits and buffs active at that time.
+Arrow keys move the cursor; Escape or **Весь бой** restores the full encounter.
+Buffs whose application is absent from the log have dashed spans and an
+approximate uptime marker. Auras with no recorded events cannot be recovered.
+
+![Zoomed buff timeline with active aura and nearby events](showcase/redesign/timeline-buffs.jpg)
+
 ### Combat-log import
 
 Automatic recording uses DBM boss encounters. Import and 30-day cleanup run
