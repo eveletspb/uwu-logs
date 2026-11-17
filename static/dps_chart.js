@@ -14,14 +14,14 @@ const selectionContext = CHART_OVERLAY.getContext('2d');
 const SUMBIT = document.querySelector(".min-max-slider-submit");
 
 const REPORT_ID = window.location.pathname.split('/')[2];
-const SELECTION_COLOR = "#8320DF";
+const SELECTION_COLOR = "#67d2c6";
 const SELECTION_ALPHA = 0.1;
 
 const CACHED_GRAPHS = {};
 const GET_DPS_REQUEST = new XMLHttpRequest();
 const QUERY_PARAMS = new URLSearchParams(window.location.search);
-const start = QUERY_PARAMS.get("s");
-const end = QUERY_PARAMS.get("f");
+const start = Number(QUERY_PARAMS.get("s") ?? 0);
+const end = Number(QUERY_PARAMS.get("f") ?? main.dataset.duration ?? 0);
 const start_custom = QUERY_PARAMS.get("sc") ?? 0;
 const end_custom = QUERY_PARAMS.get("fc") ?? (end - start);
 const selection = {
@@ -77,12 +77,14 @@ function make_new_dataset(datapoints) {
   return {
     data: datapoints,
     cubicInterpolationMode: 'monotone',
-    borderColor: '#6900cc',
+    borderColor: '#67d2c6',
+    pointRadius: 0,
     pointBorderWidth: 0,
   }
 }
 
 function chartSetData(datapoints) {
+  graphStatus.textContent = Object.keys(datapoints).length ? '' : 'Нет событий урона за выбранный период.';
   if (Object.keys(datapoints).length === 0) return;
 
   const datapoints_values = Object.values(datapoints);
@@ -113,7 +115,10 @@ function chartSetData(datapoints) {
 
 GET_DPS_REQUEST.onreadystatechange = () => {
   if (GET_DPS_REQUEST.readyState != 4) return;
-  if (GET_DPS_REQUEST.status != 200) return;
+  if (GET_DPS_REQUEST.status != 200) {
+    graphStatus.textContent = 'Не удалось загрузить график. Попробуй открыть его снова.';
+    return;
+  }
   
   const datapoints = JSON.parse(GET_DPS_REQUEST.response);
   CACHED_GRAPHS[SELECT_SLICE_SECONDS.value] = datapoints;
@@ -121,6 +126,7 @@ GET_DPS_REQUEST.onreadystatechange = () => {
 }
 
 function send_post() {
+  graphStatus.textContent = 'Загрузка графика…';
   const params_obj = Object.fromEntries(QUERY_PARAMS);
   params_obj["player_name"] = SOURCE_NAME;
   params_obj["sec"] = SELECT_SLICE_SECONDS.value;
@@ -137,6 +143,7 @@ function toggle_graph() {
 }
 
 function time_to_text(t) {
+  t = Math.max(0, Math.round(Number(t) || 0));
   const minutes = `${Math.floor(t/60)}`.padStart(2, '0');
   const seconds = `${t%60}`.padStart(2, '0');
   return `${minutes}:${seconds}`
@@ -212,6 +219,10 @@ SUMBIT.addEventListener("click", () => {
   window.location.replace(`?${QUERY_PARAMS.toString()}`);
 });
 
+const graphStatus = document.createElement('p');
+graphStatus.setAttribute('role', 'status');
+CHART_ELEMENT_WRAP.before(graphStatus);
+GET_DPS_REQUEST.onerror = () => { graphStatus.textContent = 'Ошибка соединения при загрузке графика.'; };
 set_text_range();
 toggle_graph();
 TOGGLE_GRAPH.addEventListener("change", toggle_graph);

@@ -153,12 +153,12 @@ class Dps(logs_base.THE_LOGS):
 
         enc_name = data.get("boss")
         attempt = data.get("attempt")
-        if not enc_name or not attempt:
-            return {}
-        
-        enc_data = self.get_enc_data()
-        enc_name = BOSSES_FROM_HTML[enc_name]
-        s, f = enc_data[enc_name][int(attempt)]
+        if enc_name in BOSSES_FROM_HTML and str(attempt).isdigit():
+            enc_data = self.get_enc_data()
+            enc_name = BOSSES_FROM_HTML[enc_name]
+            s, f = enc_data[enc_name][int(attempt)]
+        else:
+            s, f = 0, len(self.LOGS)
         player = data.get("player_name")
         _data = self.get_dps(s, f, player)
         if not _data:
