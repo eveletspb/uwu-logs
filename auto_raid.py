@@ -1,4 +1,4 @@
-"""Local post-raid import, safe journal rotation, and 24-hour retention."""
+"""Local post-raid import, safe journal rotation, and 30-day retention."""
 import ctypes
 import hashlib
 import json

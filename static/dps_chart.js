@@ -23,12 +23,13 @@ const QUERY_PARAMS = new URLSearchParams(window.location.search);
 const start = Number(QUERY_PARAMS.get("s") ?? 0);
 const end = Number(QUERY_PARAMS.get("f") ?? main.dataset.duration ?? 0);
 const start_custom = QUERY_PARAMS.get("sc") ?? 0;
-const end_custom = QUERY_PARAMS.get("fc") ?? (end - start);
+const duration = Number(main.dataset.duration ?? (end - start));
+const end_custom = QUERY_PARAMS.get("fc") ?? duration;
 const selection = {
   w: 0,
   startX: 0,
-  startIndex: start_custom,
-  lastIndex: end_custom,
+  startIndex: start_custom / Math.max(Number(SELECT_SLICE_SECONDS.value), 1),
+  lastIndex: end_custom / Math.max(Number(SELECT_SLICE_SECONDS.value), 1),
   drag: false,
 };
 const CHART_OPTIONS = {
@@ -94,6 +95,9 @@ function chartSetData(datapoints) {
   CHART.options.scales.y.max = Math.ceil(datapoints_max);
   CHART.data.datasets[0] = make_new_dataset(datapoints);
   CHART.update();
+  selection.startIndex = start_custom / Math.max(Number(SELECT_SLICE_SECONDS.value), 1);
+  selection.lastIndex = end_custom / Math.max(Number(SELECT_SLICE_SECONDS.value), 1);
+  set_text_range();
   setTimeout(() => {
     CHART_OVERLAY.width = MAIN_CANVAS.width;
     CHART_OVERLAY.height = MAIN_CANVAS.height;
@@ -101,8 +105,8 @@ function chartSetData(datapoints) {
     selectionContext.globalAlpha = SELECTION_ALPHA;
     
     const w = CHART.chartArea.right - CHART.chartArea.left;
-    selection.w = (end_custom - start_custom) / (end - start - 1) * w;
-    selection.startX = CHART.chartArea.left + start_custom / (end - start) * w;
+    selection.w = (end_custom - start_custom) / Math.max(duration, 1) * w;
+    selection.startX = CHART.chartArea.left + start_custom / Math.max(duration, 1) * w;
     console.log(selection);
     selectionContext.fillRect(
       selection.startX,

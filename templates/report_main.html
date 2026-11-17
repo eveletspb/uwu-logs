@@ -3,7 +3,7 @@
 {% block scripts_head %}
 <script src="/static/chart-4.1.2.min.js"></script>
 <script src="/static/report_main.js?v=240820-1" async></script>
-<script src="/static/dps_chart.js?261117-graph-fix" defer></script>
+<script src="/static/dps_chart.js?261117-workspace" defer></script>
 {% endblock scripts_head %}
 
 {% block add_css_file %}
@@ -12,24 +12,34 @@
 
 {% block the_main %}
 <main id="report-main" data-duration="{{ DURATION }}">
+  <div class="analysis-toolbar">
+    <div class="metric-tabs" role="group" aria-label="Метрика">
+      <button type="button" data-metric="all" aria-pressed="true">Сводка</button>
+      <button type="button" data-metric="damage" aria-pressed="false">Урон</button>
+      <button type="button" data-metric="heal" aria-pressed="false">Лечение</button>
+      <button type="button" data-metric="taken" aria-pressed="false">Полученный урон</button>
+    </div>
+    <input id="player-filter" type="search" placeholder="Найти игрока" aria-label="Найти игрока">
+  </div>
+  <p id="player-filter-status" role="status" hidden>Игроки не найдены. Попробуй другое имя.</p>
   <section class="summary-grid" aria-label="Сводка рейда">
     <div class="summary-tile"><div class="summary-label">Урон рейда</div><div class="summary-value">{{ DATA.get('damage', {}).get('Total', {}).get('value', '—') }}</div><div class="summary-detail">{{ DATA.get('damage', {}).get('Total', {}).get('per_second', '—') }} DPS</div></div>
     <div class="summary-tile"><div class="summary-label">Эффективное лечение</div><div class="summary-value">{{ DATA.get('heal', {}).get('Total', {}).get('value', '—') }}</div><div class="summary-detail">{{ DATA.get('heal', {}).get('Total', {}).get('per_second', '—') }} HPS</div></div>
     <div class="summary-tile"><div class="summary-label">Участники</div><div class="summary-value">{{ SPECS|length - 1 }}</div><div class="summary-detail">Выбери игрока для подробностей</div></div>
   </section>
   <section id="chart-wrap-wrap">
-    <input type="checkbox" id="toggle-graph">
-    <label for="toggle-graph">График урона и лечения</label>
+    <input type="checkbox" id="toggle-graph" checked>
+    <label for="toggle-graph">График DPS</label>
     <select id="sliced-sec" class="controls">
-      <option value=0 selected>Avg whole fight</option>
-      <option value=1>Avg every second</option>
-      <option value=2>Avg every 2 seconds</option>
-      <option value=3>Avg every 3 seconds</option>
-      <option value=5>Avg every 5 seconds</option>
-      <option value=10>Avg every 10 seconds</option>
-      <option value=15>Avg every 15 seconds</option>
-      <option value=20>Avg every 20 seconds</option>
-      <option value=30>Avg every 30 seconds</option>
+      <option value=0>Среднее за бой</option>
+      <option value=1>По 1 секунде</option>
+      <option value=2>По 2 сек.</option>
+      <option value=3>По 3 сек.</option>
+      <option value=5 selected>По 5 секунд</option>
+      <option value=10>По 10 сек.</option>
+      <option value=15>По 15 сек.</option>
+      <option value=20>По 20 сек.</option>
+      <option value=30>По 30 сек.</option>
     </select>
     <div class="controls range-values">
       <span class="min-value"></span>
@@ -37,7 +47,7 @@
       <span class="max-value"></span>
       <span class="total-value"></span>
     </div>
-    <button class="controls min-max-slider-submit" type="submit">Slice</button>
+    <button class="controls min-max-slider-submit" type="submit">Выделить период</button>
     <section id="chart-wrap">
       <canvas id="overlay" width="600" height="400" style="position:absolute;pointer-events:none;"></canvas>
       <canvas id="chart"></canvas>

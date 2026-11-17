@@ -9,7 +9,8 @@
   {% block head_meta %}{% endblock head_meta %}
   {% block scripts_head %}{% endblock scripts_head %}
   {% block add_style %}{% endblock add_style %}
-  <link rel="stylesheet" href="/static/refined.css?v=1">
+  <link rel="stylesheet" href="/static/refined.css?v=2">
+  <link rel="stylesheet" href="/static/analysis-workspace.css?v=1">
 </head>
 <body>
   <script defer src="/static/local-status.js"></script>
@@ -23,8 +24,10 @@
     <span class="local-badge">ЛОКАЛЬНО</span>
   </nav>
   {% block fight_aside %}{% endblock fight_aside %}
+  {% if REPORT_ID %}<div class="analysis-workspace">{% block report_sidebar %}{% endblock report_sidebar %}<div class="analysis-content">{% endif %}
   {% block main_foot %}{% endblock main_foot %}
   {% block the_main %}{% endblock the_main %}
+  {% if REPORT_ID %}</div></div><script src="/static/analysis-workspace.js?v=3" defer></script>{% endif %}
   {% block main_scripts %}{% endblock main_scripts %}
   {% block the_scripts %}{% endblock the_scripts %}
 </body>

@@ -109,6 +109,31 @@
 </footer>
 {% endblock main_foot %}
 
+{% block report_sidebar %}
+<aside class="encounter-sidebar" aria-label="Бои рейда">
+  <div class="sidebar-heading">Бои рейда <span>{{ SEGMENTS_KILLS|length }} убийств</span></div>
+  <a class="encounter-all" href="/reports/{{ REPORT_ID }}/">Весь отчёт</a>
+  <div class="encounter-filter" role="group" aria-label="Показать бои">
+    <button type="button" data-fight-filter="all" aria-pressed="true">Все</button>
+    <button type="button" data-fight-filter="kill" aria-pressed="false">Убийства</button>
+    <button type="button" data-fight-filter="wipe" aria-pressed="false">Вайпы</button>
+  </div>
+  <div class="encounter-list">
+  {% for boss in SEGMENTS_LINKS if boss.boss_name != 'all' %}
+    <details class="encounter-group" open>
+      <summary>{{ boss.boss_name }}</summary>
+      {% for difficulty in boss.by_difficulty.values() %}
+        {% for segment in difficulty %}
+        <a href="{{ segment.href }}" class="encounter-attempt {{ segment.css_class }}"><span class="attempt-state">{{ 'Убийство' if 'kill' in segment.css_class else 'Вайп' }}</span><span>{{ segment.segment_str }}</span></a>
+        {% endfor %}
+      {% endfor %}
+    </details>
+  {% endfor %}
+  </div>
+  <p class="sidebar-hint">Выбери попытку, затем метрику и игрока.</p>
+</aside>
+{% endblock report_sidebar %}
+
 {% block main_scripts %}
 <script>
   const tabs = document.querySelectorAll('[type="radio"]');

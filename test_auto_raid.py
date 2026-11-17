@@ -126,6 +126,17 @@ class AutomaticRaidTests(unittest.TestCase):
         self.assertTrue(recent.exists())
         self.assertEqual(raw.read_bytes(),new_data)
 
+    def test_thirty_day_retention_preserves_week_old_raid(self):
+        self.worker.hours = 30*24
+        for name, age in [('week-old', 7), ('expired', 31)]:
+            folder = Directories.logs/name
+            folder.mkdir()
+            data = log_rows(datetime.now(ZONE)-timedelta(days=age), 20)
+            (folder/'LOGS_CUT.zstd').write_bytes(zstandard.ZstdCompressor().compress(data))
+        self.worker.cleanup(self.now)
+        self.assertTrue((Directories.logs/'week-old').exists())
+        self.assertFalse((Directories.logs/'expired').exists())
+
     def test_failure_does_not_commit_or_rotate(self):
         self.source.write_bytes(log_rows(datetime.now(ZONE)-timedelta(minutes=3)))
         self.worker.tick(self.now)

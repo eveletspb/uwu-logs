@@ -5,3 +5,4 @@
 ## OptionalDeps: DBM-Core
 ## SavedVariables: RaidAutoLogDB
 RaidAutoLog.lua
+Progress.lua

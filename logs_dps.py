@@ -151,16 +151,17 @@ class Dps(logs_base.THE_LOGS):
         if not data:
             return {}
 
-        enc_name = data.get("boss")
-        attempt = data.get("attempt")
-        if enc_name in BOSSES_FROM_HTML and str(attempt).isdigit():
-            enc_data = self.get_enc_data()
-            enc_name = BOSSES_FROM_HTML[enc_name]
-            s, f = enc_data[enc_name][int(attempt)]
-        else:
-            s, f = 0, len(self.LOGS)
+        # Use the same encounter selection as the tables, including all attempts
+        # and custom selections. Concatenate segments without intervening trash.
+        from logs_main import QuerySegment
+        query = QuerySegment(**{key: value for key, value in data.items()
+                                if key in QuerySegment.__dataclass_fields__})
+        segments = self.parse_request(query)['SEGMENTS']
         player = data.get("player_name")
-        _data = self.get_dps(s, f, player)
+        _data, offset = {}, 0
+        for s, f in segments:
+            _data.update({key + offset: value for key, value in self.get_dps(s, f, player).items()})
+            offset += round(self.get_slice_duration(s, f) * 10) + 1
         if not _data:
             return {}
         refresh_window = data.get("sec")

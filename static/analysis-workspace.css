@@ -1,0 +1,54 @@
+/* Analysis workspace: encounter navigation, metric, graph, table. Existing palette. */
+.analysis-workspace{display:grid;grid-template-columns:220px minmax(0,1fr);max-width:1800px;margin:0 auto;border-top:1px solid var(--line);min-height:calc(100vh - 235px)}
+.analysis-content{min-width:0;padding:0 20px 30px}
+.analysis-content main{padding:18px 0;max-width:none}
+.analysis-content footer{border:0;border-bottom:1px solid var(--line);border-radius:0;padding:0;background:transparent;max-width:none;margin:0;min-height:44px;z-index:25}
+.encounter-sidebar{background:#101823;border-right:1px solid var(--line);padding:16px 12px;min-width:0}
+.sidebar-heading{font-size:13px;font-weight:500;display:flex;justify-content:space-between;gap:8px;margin-bottom:14px}
+.sidebar-heading span{color:var(--muted);font-size:10px;font-weight:400}
+.encounter-all{display:block;padding:8px 10px;background:#203536;border:1px solid #31534e;border-radius:4px;color:#80d8cc;font-size:12px}
+.encounter-filter{display:flex;margin:12px 0;gap:3px}.encounter-filter button{flex:1;min-height:26px;padding:4px;font-size:10px;border-radius:3px;background:transparent}
+.encounter-filter button[aria-pressed=true]{background:#263a44;color:#80d8cc;border-color:#3b766e}
+.encounter-group{padding:9px 0;border-bottom:1px solid #233040}.encounter-group summary{font-size:12px;color:#c4d0df;cursor:pointer;margin-bottom:6px;overflow-wrap:anywhere}
+.encounter-attempt{display:flex;gap:6px;flex-direction:column;padding:7px 9px;margin:3px 0;font-size:11px;color:#a6b5ca;border-radius:4px;border-left:2px solid transparent;line-height:1.35}
+.encounter-attempt:hover{background:#1c2b3c}.encounter-attempt.selected{background:#203b3c;border-left-color:#67d2c6;color:#effaf7}.attempt-state{font-size:10px}.kill-link .attempt-state{color:#75c5a0}.wipe-link .attempt-state{color:#cf8c98}
+.sidebar-hint{font-size:11px;color:#768ba4;padding:10px 0;line-height:1.6}
+[hidden]{display:none!important}
+#top-row-wrap{z-index:45;max-width:1800px;padding:18px 22px 14px;gap:8px;overflow:visible;isolation:isolate}
+#top-row-wrap h1{font-size:20px}#top-row-wrap .fights-container{z-index:2}#top-row-wrap .fights-container:focus-within,#top-row-wrap .fights-container:hover{z-index:4}
+.fights-container .bosses{max-height:none;overflow:visible}
+.analysis-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.metric-tabs{display:flex;gap:2px;border-bottom:1px solid var(--line)}.metric-tabs button{border:0;border-radius:0;background:none;box-shadow:none;font-size:12px;padding:9px 12px;color:#9cb0c7;border-bottom:2px solid transparent}
+.metric-tabs button[aria-pressed=true]{color:#78d7ca;border-bottom-color:#67d2c6;background:#14262b}
+#player-filter{width:160px;font-size:12px}
+.analysis-content .summary-grid{gap:0;border:1px solid #29374a;border-radius:5px;margin-bottom:15px;background:#141e2a}
+.analysis-content .summary-tile{background:none;border:0;border-right:1px solid #29374a;border-radius:0;padding:12px 16px}.analysis-content .summary-tile:last-child{border-right:0}
+.analysis-content .summary-value{font-size:21px}.analysis-content .summary-detail{font-size:10px}.analysis-content .summary-label{margin-bottom:3px}
+.analysis-content #chart-wrap-wrap{padding:0 0 16px;font-size:12px}.analysis-content #chart-wrap{height:180px;position:relative;padding:8px;border:1px solid #233345}
+.analysis-content #chart-wrap-wrap select,.analysis-content #chart-wrap-wrap button{font-size:11px;min-height:28px;padding:4px 7px}
+.analysis-content #chart-wrap-wrap .range-values{font-size:11px;min-width:auto;margin:0 8px;color:#92a8bf}
+.analysis-content #toggle-graph+label{font-size:11px;padding:4px 8px}.analysis-content #chart-wrap-wrap p{font-size:12px}
+.analysis-content .table-players table{min-width:650px}.analysis-content .player-cell{min-width:140px}.analysis-content .table-players .rectangle-cell{min-width:32px;width:60px}
+#report-main[data-metric=damage] :is(th,td):is(.heal,.heal_total,.taken),#report-main[data-metric=heal] :is(th,td):is(.damage,.useful,.taken),#report-main[data-metric=taken] :is(th,td):is(.damage,.useful,.heal,.heal_total){display:none!important}
+#report-main[data-metric=heal] #chart-wrap-wrap,#report-main[data-metric=taken] #chart-wrap-wrap{display:none}
+#report-main[data-metric=all] .table-players table{min-width:800px}
+.report-date{display:flex;flex-direction:column;gap:1px;font-variant-numeric:tabular-nums;line-height:1.45}.report-date strong{font-size:14px;font-weight:500;color:#dce8f6}.report-date span{font-size:11px;color:#8fa3bb}
+.raid-progress{display:inline-block;font-size:14px;font-variant-numeric:tabular-nums;color:#7dd3bd}
+#calendar .page-heading{margin:0 0 18px;align-items:center}#calendar .page-heading h1{font-size:23px}#calendar .eyebrow{display:none}#calendar .page-heading p{margin:4px 0;font-size:12px}
+#calendar .summary-grid{display:flex;border:1px solid #29374a;background:#141e2a;border-radius:5px;margin-bottom:24px}#calendar .summary-tile{flex:1;border:0;border-right:1px solid #29374a;background:none;border-radius:0;padding:12px 18px}#calendar .summary-tile:last-child{border:0}#calendar .summary-value{font-size:20px}
+.recent-table{min-width:730px}.recent-table td{padding:12px 14px}.recent-table th{padding:10px 14px}.recent-table td:first-child{width:34%}
+footer a.active,#player-nav a.active{color:#72d6c8!important;background:#20343a;border-bottom:2px solid #67d2c6}
+@media(min-width:1400px){.analysis-workspace{grid-template-columns:250px minmax(0,1fr)}.analysis-content{padding:0 28px 30px}.analysis-content #chart-wrap{height:220px}}
+@media(max-width:760px){.analysis-workspace{grid-template-columns:minmax(0,1fr)}.encounter-sidebar{border-right:0;border-bottom:1px solid var(--line);max-height:230px;overflow:auto}.encounter-list{display:flex;gap:12px}.encounter-group{min-width:190px}.analysis-content{padding:0 12px}.sidebar-hint{display:none}.analysis-toolbar{gap:8px}.metric-tabs{overflow:auto;max-width:100%}.metric-tabs button{white-space:nowrap}#player-filter{width:100%}.analysis-content .summary-tile{padding:10px}.analysis-content .summary-value{font-size:17px}}
+
+.analysis-workspace button::before,.analysis-workspace button::after{display:none!important}.analysis-workspace button{box-shadow:none!important}.analysis-content footer{flex-wrap:wrap}.analysis-content #bot-nav{width:auto;flex:1;gap:0}.analysis-content #bot-nav>a{font-size:11px;padding:10px 7px}.analysis-content #filtered-spells-container{margin-left:0}.analysis-content #spells-search{width:150px}
+
+#player-info{display:flex;align-items:center;gap:18px;flex-wrap:wrap;font-size:12px;margin:12px 0!important}#player-info .player-name-big{font-size:24px;margin-right:auto}.analysis-content #target-select-wrap{padding:8px 12px;margin-bottom:12px}.analysis-content #player-nav-wrap{margin-bottom:12px}.fights-dropdown-label:hover{box-shadow:none!important}.analysis-content #dmg-done-main table{font-size:12px}
+
+.analysis-content #tabs-wrap{display:flex;justify-content:flex-start;align-items:stretch;gap:8px;margin:10px 0 16px}
+.analysis-content .char-tab{font-size:18px;min-width:210px;max-width:300px;padding:8px 12px;border:1px solid #344b5e;border-radius:5px;background:#152330;box-shadow:none;line-height:1.5}
+.analysis-content .char-tab>div{font-size:10px;gap:10px;align-items:center}.analysis-content .char-report-id{max-width:140px;text-overflow:ellipsis}
+.analysis-content .char-tab .button-close{font-size:11px;min-height:22px;padding:0 5px;width:24px}
+.analysis-content #add-character{font-size:20px;width:40px;min-height:36px;align-self:center}
+.analysis-content #click-reminder{font-size:11px;padding:8px 12px;color:#8fa3b9}.analysis-content #spells-fav-reminder{font-size:11px;padding:8px 12px}
+.analysis-content .casts-header{font-size:11px}.analysis-content #casts-section-wrap{font-size:12px}.analysis-content .table-spells{max-height:65vh}

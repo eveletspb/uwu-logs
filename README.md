@@ -2,7 +2,7 @@
 
 ## Updated design
 
-A local raid analytics interface for WoW 3.3.5a: a raid library, damage and
+A local raid analytics interface for WoW 3.3.5a with encounter navigation, metric tabs, player search and a visible DPS graph: a raid library, damage and
 healing summaries, readable player tables, and a simple combat-log import flow.
 
 ### Raid library
@@ -20,7 +20,7 @@ switching damage and healing views and opening individual player details.
 
 ### Combat-log import
 
-Automatic recording uses DBM boss encounters. Import and 24-hour cleanup run
+Automatic recording uses DBM boss encounters. Import and 30-day cleanup run
 after WoW closes; manual import is also available.
 
 ![Local combat-log import page](showcase/redesign/log-import.jpg)
@@ -55,7 +55,7 @@ needed for archive parsing. Download the optional icon pack linked below.
 
 Copy `addon/RaidAutoLog` to your client's `Interface/AddOns` directory. It uses
 DBM-Core pull/kill/wipe callbacks to record only raid boss encounters.
-By default, automatic import, calendar indexing, journal rotation and 24-hour
+By default, automatic import, calendar indexing, journal rotation and 30-day
 retention run only after WoW closes. Files held open by WoW are never rotated.
 Logs, local config, downloaded runtimes and personal state are not committed.
 
@@ -130,3 +130,16 @@ Logs, local config, downloaded runtimes and personal state are not committed.
 
 - add summary stats like max hit done max hit taken max absorb max grabs
 - 1 tick total - all targets dmg from 1 hurricane tick or typhoon
+
+## Raid progress
+
+The raid library shows boss progress and a readable start date. RaidAutoLog
+records instance progress from the server lock prompt (and extended saved-raid
+API when the server supports it), including bosses killed before you joined.
+Its saved variables are read locally after logout. Reload the client after
+installing or updating the addon.
+
+A partial combat log cannot reveal earlier boss kills. Reports without an
+instance snapshot show a lower bound such as `≥2/9` with a “from log” hint;
+this is not presented as the complete lockout progress. Servers that do not
+provide encounter progress retain this lower-bound display.
