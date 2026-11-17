@@ -34,7 +34,7 @@ function add_style(to_show, to_hide) {
 }
 function swap_click_wrap(useful_class_name) {
   return e => {
-    const useful_shown = e.target.parentElement.classList.contains(useful_class_name);
+    const useful_shown = e.currentTarget.parentElement.classList.contains(useful_class_name);
     const total_class_name = TOTAL[useful_class_name];
     const to_hide = useful_shown ? useful_class_name : total_class_name;
     const to_show = useful_shown ? total_class_name : useful_class_name;

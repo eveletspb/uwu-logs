@@ -81,6 +81,8 @@ select > option {
 
 {% block the_main %}
 <main id="calendar">
+{% include "local_library.html" %}
+<details class="calendar-details"><summary>Календарь и фильтры</summary>
 <datalist id="fight-list">
   {% for fight_name in ALL_FIGHT_NAMES %}
   <option value="{{ fight_name }}"></option>
@@ -152,6 +154,7 @@ select > option {
     </tbody>
   </table>
 </section>
+</details>
 </main>
 {% endblock the_main %}
 

@@ -12,9 +12,14 @@
 
 {% block the_main %}
 <main id="report-main" data-duration="{{ DURATION }}">
+  <section class="summary-grid" aria-label="Сводка рейда">
+    <div class="summary-tile"><div class="summary-label">Урон рейда</div><div class="summary-value">{{ DATA.get('damage', {}).get('Total', {}).get('value', '—') }}</div><div class="summary-detail">{{ DATA.get('damage', {}).get('Total', {}).get('per_second', '—') }} DPS</div></div>
+    <div class="summary-tile"><div class="summary-label">Эффективное лечение</div><div class="summary-value">{{ DATA.get('heal', {}).get('Total', {}).get('value', '—') }}</div><div class="summary-detail">{{ DATA.get('heal', {}).get('Total', {}).get('per_second', '—') }} HPS</div></div>
+    <div class="summary-tile"><div class="summary-label">Участники</div><div class="summary-value">{{ SPECS|length - 1 }}</div><div class="summary-detail">Выбери игрока для подробностей</div></div>
+  </section>
   <section id="chart-wrap-wrap">
     <input type="checkbox" id="toggle-graph">
-    <label for="toggle-graph">Show graph</label>
+    <label for="toggle-graph">График урона и лечения</label>
     <select id="sliced-sec" class="controls">
       <option value=0 selected>Avg whole fight</option>
       <option value=1>Avg every second</option>
@@ -42,14 +47,14 @@
     <table class="add-player-rank">
       <thead>
         <tr>
-          <th class="player-cell">Name</th>
+          <th class="player-cell">Игрок</th>
           <th class="points-rank sortable">Rank</th>
           <th class="points-dps sortable">Dps%</th>
-          <th class="useful sortable" colspan="3">Useful Damage<button class="swap swap-damage">⇄</button></th>
-          <th class="damage sortable" colspan="3">Total Damage<button class="swap swap-damage">⇄</button></th>
-          <th class="heal sortable" colspan="3">Heal<button class="swap swap-heal">⇄</button></th>
-          <th class="heal_total sortable" colspan="3">Total heal<button class="swap swap-heal">⇄</button></th>
-          <th class="taken sortable" colspan="3">Damage Taken</th>
+          <th class="useful sortable" colspan="3">Полезный урон<button type="button" class="swap swap-damage" title="Переключить весь и полезный урон" aria-label="Переключить весь и полезный урон">Весь урон</button></th>
+          <th class="damage sortable" colspan="3">Урон<button type="button" class="swap swap-damage" title="Переключить весь и полезный урон" aria-label="Переключить весь и полезный урон">Полезный</button></th>
+          <th class="heal sortable" colspan="3">Лечение<button type="button" class="swap swap-heal" title="Переключить эффективное и полное лечение с избыточным" aria-label="Переключить эффективное и полное лечение">Полное</button></th>
+          <th class="heal_total sortable" colspan="3">Полное лечение<button type="button" class="swap swap-heal" title="Переключить эффективное и полное лечение с избыточным" aria-label="Переключить эффективное и полное лечение">Эффективное</button></th>
+          <th class="taken sortable" colspan="3">Полученный урон</th>
         </tr> 
       </thead>
       <tbody class="table-has-total">

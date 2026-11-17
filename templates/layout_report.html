@@ -31,7 +31,7 @@
     <h1><a href="/reports/{{ REPORT_ID }}">{{ REPORT_NAME }}</a></h1>
     <aside class="fights-container">
       <input type="checkbox" id="kills-hover-dropdown-cb" class="fights-dropdown-cb">
-      <label for="kills-hover-dropdown-cb" id="kills-hover-dropdown-label" class="fights-dropdown-label">💀</label>
+      <label for="kills-hover-dropdown-cb" id="kills-hover-dropdown-label" class="fights-dropdown-label">Убийства</label>
       <ul class="bosses">
         {% for segment in SEGMENTS_KILLS %}
         <li>
@@ -42,7 +42,7 @@
     </aside>
     <aside class="fights-container">
       <input type="checkbox" id="fights-hover-dropdown-cb" class="fights-dropdown-cb">
-      <label for="fights-hover-dropdown-cb" id="fights-hover-dropdown" class="fights-dropdown-label">Ξ</label>
+      <label for="fights-hover-dropdown-cb" id="fights-hover-dropdown" class="fights-dropdown-label">Все попытки</label>
       <ul class="bosses">
         {% for boss_segments in SEGMENTS_LINKS %}
         <li>
@@ -71,21 +71,22 @@
 {% endblock fight_aside %}
 
 {% block main_foot %}
-<footer>
+<footer aria-label="Разделы отчёта">
+  <a class="report-overview" href="/reports/{{ REPORT_ID }}/{{ QUERY }}">Обзор</a>
   <input id="open-bot" type="checkbox">
   <label id="bot-chkbox" for="open-bot">≣</label>
   <div id="bot-nav">
     {% if 'boss' in QUERY %}
-    <a href="/reports/{{ REPORT_ID }}/damage/{{ QUERY }}">TARGETS</a>
+    <a href="/reports/{{ REPORT_ID }}/damage/{{ QUERY }}">Цели</a>
     {% else %}
-    <a>TARGETS</a>
+    <a>Цели</a>
     {% endif %}
-    <a href="/reports/{{ REPORT_ID }}/consumables/{{ QUERY }}">CONSUMABLES</a>
-    <a href="/reports/{{ REPORT_ID }}/entities/{{ QUERY }}">ENTITIES</a>
-    <a href="/reports/{{ REPORT_ID }}/all_auras/{{ QUERY }}">AURAS</a>
-    <a href="/reports/{{ REPORT_ID }}/deaths/{{ QUERY }}">DEATHS</a>
-    <a href="/reports/{{ REPORT_ID }}/powers/{{ QUERY }}">POWERS</a>
-    <a href="/reports/{{ REPORT_ID }}/compare/{{ QUERY }}">COMPARE</a>
+    <a href="/reports/{{ REPORT_ID }}/consumables/{{ QUERY }}">Расходники</a>
+    <a href="/reports/{{ REPORT_ID }}/entities/{{ QUERY }}">Участники</a>
+    <a href="/reports/{{ REPORT_ID }}/all_auras/{{ QUERY }}">Ауры</a>
+    <a href="/reports/{{ REPORT_ID }}/deaths/{{ QUERY }}">Смерти</a>
+    <a href="/reports/{{ REPORT_ID }}/powers/{{ QUERY }}">Ресурсы</a>
+    <a href="/reports/{{ REPORT_ID }}/compare/{{ QUERY }}">Сравнение</a>
     {% if SLICE_NAME == "The Lich King" %}
     <a class="special-tab" href="/reports/{{ REPORT_ID }}/valks/{{ QUERY }}">GRABS</a>
     {% elif SLICE_NAME == "Lady Deathwhisper" %}
@@ -99,7 +100,7 @@
       <a href="/reports/{{ REPORT_ID }}/custom_search/{{ QUERY }}">SEARCH</a>
     </li> -->
     <div id="filtered-spells-container">
-      <input id="spells-search" type="text" maxlength="10" size="10" placeholder="Search for spells">
+      <input id="spells-search" type="text" maxlength="10" size="10" placeholder="Поиск заклинаний">
       <div id="filtered-spells-wrap">
         <div id="filtered-spells"></div>
       </div>

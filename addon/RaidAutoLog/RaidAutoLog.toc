@@ -1,0 +1,7 @@
+## Interface: 30300
+## Title: Raid Auto Log
+## Notes: Records raid bosses only using DBM pull, kill and wipe callbacks.
+## Version: 2.0
+## OptionalDeps: DBM-Core
+## SavedVariables: RaidAutoLogDB
+RaidAutoLog.lua

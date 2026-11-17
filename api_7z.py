@@ -36,7 +36,7 @@ class _SevenZipWindows:
     executable = _File("7z.exe")
     portable = _File("7zr.exe")
     installer = _File("7z2408-x64.exe")
-    extract_command = (portable.path, "e", installer.path, f"-o{executable.path.parent}", executable.file_name, "-y")
+    extract_command = (portable.path, "e", installer.path, f"-o{executable.path.parent}", executable.file_name, "7z.dll", "-y")
     required_downloads = [
         portable,
         installer,

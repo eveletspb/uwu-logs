@@ -8,6 +8,30 @@ Supports any Wrath of the Lich King (3.3.5) server.
 
 ❤️ Inspired by World of Logs, LegacyPlayers and Warcraft Logs.
 
+## Local raid analytics fork
+
+This fork adds a responsive dark UI, a recent-raid library, report summaries,
+readable damage/healing tables, and visible report navigation. The existing
+parser and encounter calculations remain in place.
+
+### Local Windows installation
+
+Place this repository in a subfolder of your WoW 3.3.5a installation.
+Create a Python 3.12 virtual environment named `.venv`, then install
+`requirements-local.txt`. Copy `auto-config.example.json` to `auto-config.json`
+and set your client log path, timezone and realm-address mapping.
+
+Run `python -X utf8 local_server.py` and visit `http://127.0.0.1:5000/`.
+Only the loopback interface is bound. Import accepts the raw `WoWCombatLog.txt`
+as well as archives; the original upstream 7-Zip executable and `7z.dll` are
+needed for archive parsing. Download the optional icon pack linked below.
+
+Copy `addon/RaidAutoLog` to your client's `Interface/AddOns` directory. It uses
+DBM-Core pull/kill/wipe callbacks to record only raid boss encounters.
+By default, automatic import, calendar indexing, journal rotation and 24-hour
+retention run only after WoW closes. Files held open by WoW are never rotated.
+Logs, local config, downloaded runtimes and personal state are not committed.
+
 ## Self hosting
 
 - Install packages from `requirements.txt`

@@ -12,14 +12,14 @@
 <main>
 <section id="player-nav-wrap">
   <ul id="player-nav">
-    <li><a href="/reports/{{ REPORT_ID }}/player/{{ SOURCE_NAME }}/{{ QUERY }}">DAMAGE</a></li>
-    <li><a href="/reports/{{ REPORT_ID }}/heal/{{ SOURCE_NAME }}/{{ QUERY }}">HEAL</a></li>
-    <li><a href="/reports/{{ REPORT_ID }}/taken/{{ SOURCE_NAME }}/{{ QUERY }}">TAKEN</a></li>
-    <li><a href="/reports/{{ REPORT_ID }}/healed/{{ SOURCE_NAME }}/{{ QUERY }}">HEALED</a></li>
-    <li><a href="/reports/{{ REPORT_ID }}/casts/{{ SOURCE_NAME }}/{{ QUERY }}">TIMELINE</a></li>
+    <li><a href="/reports/{{ REPORT_ID }}/player/{{ SOURCE_NAME }}/{{ QUERY }}">Урон</a></li>
+    <li><a href="/reports/{{ REPORT_ID }}/heal/{{ SOURCE_NAME }}/{{ QUERY }}">Лечение</a></li>
+    <li><a href="/reports/{{ REPORT_ID }}/taken/{{ SOURCE_NAME }}/{{ QUERY }}">Полученный урон</a></li>
+    <li><a href="/reports/{{ REPORT_ID }}/healed/{{ SOURCE_NAME }}/{{ QUERY }}">Полученное лечение</a></li>
+    <li><a href="/reports/{{ REPORT_ID }}/casts/{{ SOURCE_NAME }}/{{ QUERY }}">Таймлайн</a></li>
     <li id="graph-controls">
       <section id="flag-filter-wrap">
-        <div>≡ FLAG FILTER</div>
+        <div>События</div>
         <ul id="flag-filter">
           {% for flag in FLAG_ORDER %}
           <li id="{{ flag }}" style="display: none;">
@@ -30,15 +30,15 @@
           {% endfor %}
         </ul>
       </section>
-      <span>ZOOM:</span>
+      <span>Масштаб:</span>
       <input id="spell-timeline-mult" type="range" min="1" max="100" value="3">
       <span id="spell-timeline-mult-label">3x</span>
       <input id="spell-toggle-hidden" type="checkbox">
-      <label for="spell-toggle-hidden">Show hidden</label>
+      <label for="spell-toggle-hidden">Скрытые</label>
     </li>
   </ul>
 </section>
-<section id="boss-reminder" style="display: none;">Select boss to see casts.</section>
+<section id="boss-reminder" style="display: none;">Выбери босса в меню «Все попытки», чтобы увидеть таймлайн.</section>
 <section id="tabs-wrap" style="display: none;">
   <button id="add-character">+</button>
 </section>
@@ -46,7 +46,7 @@
   <div id="casts-section-wrap">
     <div class="casts-header sticky-column">
       <select id="before-pull">
-        <option value="0">Before pull</option>
+        <option value="0">До пулла</option>
         <option value="5">5</option>
         <option value="10">10</option>
         <option value="15">15</option>

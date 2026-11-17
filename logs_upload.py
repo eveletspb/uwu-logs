@@ -682,7 +682,7 @@ class LogsArchiveParser(api_7z.SevenZipArchive):
         for _ in range(3):
             try:
                 path_slice_zstd.parent.mkdir(parents=True, exist_ok=True)
-                path_slice_zstd_temp.rename(path_slice_zstd)
+                path_slice_zstd_temp.replace(path_slice_zstd)
                 break
             except FileNotFoundError:
                 continue

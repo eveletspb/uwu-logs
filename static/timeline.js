@@ -401,7 +401,7 @@ function change_zoom() {
   toggle_timeline_labels("timeline-ruler-half-second", 10 * m);
   toggle_timeline_labels_big(6 * m);
   console.timeEnd('toggle');
-  TABLE_WRAP.style.display = "";
+  TABLE_WRAP.style.display = ENCOUNTER_NAME ? "" : "none";
 }
 
 function new_timeline_text(sec, tenth) {
