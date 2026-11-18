@@ -571,6 +571,15 @@ class LogsSegments(logs_base.THE_LOGS):
         if is_kill(self.LOGS[f-1]):
             return True
 
+        # Death can be followed by aura cleanup before the encounter slice ends.
+        if boss_name in ("Battleguard Sartura", "Viscidus"):
+            for line in self.LOGS[s:f]:
+                if ",PARTY_KILL," not in line and ",UNIT_DIED," not in line:
+                    continue
+                _, flag, _, _, target_guid, _ = line.split(",", 5)
+                if flag in FLAGS_KILL and BOSSES_GUIDS.get(target_guid[6:-6]) == boss_name:
+                    return True
+
         if boss_name == "The Lich King":
             return has_fury_of_frostmourne(self.LOGS[f-10:f+20])
 
