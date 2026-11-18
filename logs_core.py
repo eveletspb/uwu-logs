@@ -94,7 +94,13 @@ class Logs:
         return self.path / s
 
     def get_timedelta(self, last, now):
-        return to_dt_year_precise(now, self.year) - to_dt_year_precise(last, self.year)
+        start = to_dt_year_precise(last, self.year)
+        end = to_dt_year_precise(now, self.year)
+        if (end-start).days < -180:
+            end = end.replace(year=end.year+1)
+        elif (end-start).days > 180:
+            end = end.replace(year=end.year-1)
+        return end-start
     
     def get_timedelta_seconds(self, last, now):
         return self.get_timedelta(last, now).total_seconds()

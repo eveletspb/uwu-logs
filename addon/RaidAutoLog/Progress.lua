@@ -1,10 +1,37 @@
 -- Event-driven instance progress. Saved on logout/reload; no combat-log handler.
 local frame = CreateFrame("Frame")
-local session, instance, total, complete
+local session, instance, instanceDifficulty, total, complete
 local kills = {}
 local lastRequest = 0
+local lastIdentity, lastIdentityTime
 local function Hex(value)
     return (tostring(value or ""):gsub(".", function(c) return string.format("%02x", string.byte(c)) end))
+end
+local function SaveIdentity()
+    if not session or not GetNumSavedInstances or not GetSavedInstanceInfo then return end
+    local name, kind, currentDifficulty = GetInstanceInfo()
+    if kind ~= "raid" then return end
+    for i = 1, GetNumSavedInstances() do
+        local savedName, id, reset, difficulty, locked, _, high, raid = GetSavedInstanceInfo(i)
+        if savedName == name and difficulty == currentDifficulty and locked and raid and id and reset and reset > 0 then
+            RaidAutoLogDB = RaidAutoLogDB or {enabled=true}
+            local identity = tostring(id) .. ":" .. tostring(high or 0) .. ":" .. tostring(difficulty)
+            if lastIdentity and identity ~= lastIdentity then session = time() end
+            if identity == lastIdentity and time() - (lastIdentityTime or 0) < 30 then return end
+            lastIdentity, lastIdentityTime = identity, time()
+            local rows = RaidAutoLogDB.lockouts or {}
+            local keep = {}
+            for _, row in ipairs(rows) do
+                local stamp = tonumber(row:match("^RAL2|(%d+)|"))
+                if stamp and stamp > time() - 30*86400 then keep[#keep+1] = row end
+            end
+            keep[#keep+1] = table.concat({"RAL2",time(),Hex((GetCVar and GetCVar("realmList")) or GetRealmName()),
+                Hex(UnitName("player")),Hex(name),Hex(string.format("%.0f",id)),Hex(tostring(high or 0)),
+                difficulty,math.floor(time()+reset),session},"|")
+            while #keep > 1000 do table.remove(keep,1) end
+            RaidAutoLogDB.lockouts = keep
+        end
+    end
 end
 local function Save()
     if not session or not total or not complete then return end
@@ -28,12 +55,14 @@ local function Enter()
     if not inside or kind ~= "raid" then
         if RaidAutoLogDB then RaidAutoLogDB.progressActive = nil end
         session, instance, total, complete = nil, nil, nil, nil
+        instanceDifficulty, lastIdentity, lastIdentityTime = nil, nil, nil
         kills = {}
         return
     end
-    local name = GetInstanceInfo()
-    if instance ~= name then
+    local name, _, difficulty = GetInstanceInfo()
+    if instance ~= name or difficulty ~= instanceDifficulty then
         instance, session, total, complete = name, time(), nil, nil
+        instanceDifficulty = difficulty
         local old = RaidAutoLogDB and RaidAutoLogDB.progressActive
         if old and old.instance == name and time() - old.time < 3600 then
             session, total, complete = old.session, old.total, old.complete
@@ -80,6 +109,8 @@ end
 local function Install()
     if installed or not DBM or not DBM.RegisterCallback then return end
     DBM:RegisterCallback("DBM_Kill", function(_, mod)
+        SaveIdentity()
+        if RequestRaidInfo then RequestRaidInfo() end
         if not session or not mod or mod.isTrashMod or kills[mod] then return end
         kills[mod] = true
         if complete then complete = complete + 1; Save() end
@@ -92,6 +123,7 @@ frame:SetScript("OnEvent", function(_, event)
     elseif event == "UPDATE_INSTANCE_INFO" then SavedProgress()
     elseif event == "PLAYER_LOGOUT" then Save()
     else Enter() end
+    SaveIdentity()
 end)
 frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")

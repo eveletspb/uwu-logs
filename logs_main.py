@@ -179,6 +179,8 @@ class THE_LOGS(
         }
     
     def parse_request_custom_slice(self, query: QuerySegment):
+        if not query.start and not query.end and self.relative_path('LOCKOUT.json').exists():
+            return self.parse_request_all_bosses()
         slice_name = "Custom Slice"
         slice_tries = ""
         if query.start and query.end:
@@ -541,4 +543,3 @@ class THE_LOGS(
         logs = self.get_logs()
         # for 
         return 'Spell not found'
-    

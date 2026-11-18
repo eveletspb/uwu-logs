@@ -7,5 +7,7 @@
   "settle_seconds": 8,
   "defer_until_client_exit": true,
   "client_sha256": "",
-  "realms": {}
+  "realms": {},
+  "remote_export_url": "",
+  "reports_url": ""
 }

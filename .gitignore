@@ -34,6 +34,7 @@ venv/
 # Local installation state and downloaded runtime assets
 auto-config.json
 auto-state.json
+auto-export-state.json
 local-server.pid
 *.dll
 icons-pack.download

@@ -137,6 +137,42 @@ class AutomaticRaidTests(unittest.TestCase):
         self.assertTrue((Directories.logs/'week-old').exists())
         self.assertFalse((Directories.logs/'expired').exists())
 
+    def test_lockout_manifest_preserves_cumulative_import_without_double_counting(self):
+        at=datetime.now(ZONE)-timedelta(minutes=3)
+        encode=lambda value:str(value).encode().hex()
+        fields=[str(int(at.timestamp())),encode('192.168.1.195'),encode('Unknown'),
+                encode('Icecrown Citadel'),encode('123'),encode('0'),'1',
+                str(int(at.timestamp())+86400),str(int(at.timestamp())-30)]
+        saved=self.app.parent/'WTF/Account/TEST/SavedVariables/RaidAutoLog.lua'
+        saved.parent.mkdir(parents=True)
+        saved.write_text('"RAL2|'+'|'.join(fields)+'"',encoding='utf-8')
+        first=log_rows(at)
+        self.source.write_bytes(first)
+        self.worker.tick(self.now)
+        self.game.value['logging']=False
+        self.worker.tick(self.now+10)
+        report=next(Directories.logs.iterdir())
+        self.assertEqual(json.loads((report/'LOCKOUT.json').read_text())['lockout_id'],'123')
+        with self.source.open('ab') as output: output.write(log_rows(at+timedelta(seconds=100),20))
+        self.worker.tick(self.now+21)
+        self.worker.tick(self.now+30)
+        decoded=zstandard.ZstdDecompressor().decompress((report/'LOGS_CUT.zstd').read_bytes())
+        self.assertEqual(len(decoded.splitlines()),470)
+        # A new client log after a restart still appends to the same lockout.
+        self.game.value['running']=False
+        self.worker.tick(self.now+40)
+        later=at+timedelta(hours=1)
+        later_fields=fields.copy()
+        later_fields[0]=str(int(later.timestamp()))
+        later_fields[-1]=str(int(later.timestamp())-30)
+        saved.write_text('"RAL2|'+'|'.join(fields)+'"\n"RAL2|'+'|'.join(later_fields)+'"',encoding='utf-8')
+        self.source.write_bytes(log_rows(later,450))
+        self.worker.tick(self.now+50)
+        self.worker.tick(self.now+60)
+        self.assertEqual(len(list(Directories.logs.iterdir())),1)
+        decoded=zstandard.ZstdDecompressor().decompress((report/'LOGS_CUT.zstd').read_bytes())
+        self.assertEqual(len(decoded.splitlines()),920)
+
     def test_failure_does_not_commit_or_rotate(self):
         self.source.write_bytes(log_rows(datetime.now(ZONE)-timedelta(minutes=3)))
         self.worker.tick(self.now)

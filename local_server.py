@@ -3,6 +3,7 @@ import os
 import zipfile
 from logging.handlers import RotatingFileHandler
 import logging
+import json
 from pathlib import Path
 
 os.chdir(Path(__file__).resolve().parent)
@@ -18,6 +19,35 @@ from server_upload import app
 from logs_upload import NewUpload, LogsArchive
 from auto_raid import RaidWorker, JOB_LOCK
 from local_library import recent_reports
+from viewer_routing import report_destination
+from flask import request as flask_request, redirect
+
+_settings_path = Path('auto-config.json')
+_settings = json.loads(_settings_path.read_text('utf-8')) if _settings_path.exists() else {}
+SERVER.config['REPORTS_URL'] = _settings.get('reports_url') or _settings.get('remote_export_url', '')
+
+@SERVER.before_request
+def preferred_report_viewer():
+    if flask_request.method not in ('GET', 'HEAD'):
+        return None
+    destination = report_destination(SERVER.config.get('REPORTS_URL'), flask_request.host,
+                                     flask_request.path, flask_request.query_string.decode('utf-8'))
+    if destination:
+        return redirect(destination, code=302)
+    if flask_request.path.startswith('/reports/'):
+        aliases_path = Path('_report_aliases.json')
+        aliases = json.loads(aliases_path.read_text('utf-8')) if aliases_path.exists() else {}
+        parts = flask_request.path.split('/')
+        if parts[2] in aliases:
+            parts[2] = aliases[parts[2]]
+            target = '/'.join(parts)
+            if flask_request.query_string:
+                target += '?' + flask_request.query_string.decode('utf-8')
+            return redirect(target, code=302)
+
+# Redirect old IDs before the upstream missing-report guard returns 404.
+SERVER.before_request_funcs[None].remove(preferred_report_viewer)
+SERVER.before_request_funcs[None].insert(0, preferred_report_viewer)
 
 @SERVER.context_processor
 def local_library_context():
@@ -26,7 +56,19 @@ def local_library_context():
 _archive_main = LogsArchive.main
 def serialized_import(self):
     with JOB_LOCK:
-        return _archive_main(self)
+        result = _archive_main(self)
+        from raid_lockouts import coalesce_import
+        from c_path import Directories
+        try:
+            coalesce_import(self, Directories.main)
+        except Exception:
+            logging.getLogger('auto_raid').exception('Lockout report merge failed')
+            self.has_error = 'Error merging lockout reports; original data retained'
+            self.change_main_status(self.has_error, all_done=0)
+            return result
+        if worker is not None and not self.has_error:
+            worker.index_reports(list(self.slices))
+        return result
 LogsArchive.main = serialized_import
 
 worker = None

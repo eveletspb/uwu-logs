@@ -29,32 +29,21 @@ class Timestamps(logs_core.Logs):
         return timestamps
     
     def _new_timestamps(self):
+        # A lockout may span several nights. Minute-only subtraction loses
+        # complete hours/days and makes links select the wrong log rows.
         times: list[int] = []
         first_line = self.LOGS[0]
-        i = first_line.index('.')
-        last_minutes, last_seconds = int(first_line[i-5:i-3]), int(first_line[i-2:i])
+        times.append(0)
+        previous = first_line.split('.', 1)[0]
         for n, line in enumerate(self.LOGS):
+            current = line.split('.', 1)[0]
+            if current == previous:
+                continue
             try:
-                minutes, seconds = int(line[i-5:i-3]), int(line[i-2:i])
-            except ValueError:
-                # date change or bugged line
-                try:
-                    i = line.index('.')
-                    minutes, seconds = int(line[i-5:i-3]), int(line[i-2:i])
-                except (IndexError, ValueError):
-                    continue
-            
-            sec_diff = seconds - last_seconds
-            min_diff = minutes - last_minutes
-
-            if min_diff:
-                if min_diff < 0:
-                    min_diff += 60
-                sec_diff += min_diff * 60
-                last_minutes = minutes
-            
-            if sec_diff:
-                times.extend([n]*sec_diff)
-                last_seconds = seconds
-            
+                elapsed = int(self.get_timedelta_seconds(first_line, line))
+            except (ValueError, IndexError):
+                continue
+            if elapsed >= len(times):
+                times.extend([n]*(elapsed-len(times)+1))
+            previous = current
         return times

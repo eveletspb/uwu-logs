@@ -154,6 +154,11 @@ class RaidWorker(threading.Thread):
         self.last_cleanup = 0
         self.next_retry = 0
         self.report_cache = {}
+        from remote_export import RemoteExporter
+        self.exporter = RemoteExporter(self.root, self.config)
+        if self.exporter.url:
+            self.status.update(export_target=self.exporter.url,
+                               export_state='waiting_until_client_exit')
 
     def save(self):
         temporary = self.state_path.with_suffix('.tmp')
@@ -164,6 +169,8 @@ class RaidWorker(threading.Thread):
         while not self.stop_event.is_set():
             try:
                 self.tick()
+                if not self.status.get('game_running', True):
+                    self.exporter.tick(self.status)
             except Exception as error:
                 LOGGER.exception('Automatic raid maintenance failed')
                 self.status.update(state='error', error=str(error))
@@ -235,6 +242,9 @@ class RaidWorker(threading.Thread):
         end = self.state.get('session_start', 0)
         kept = 0
         with zipfile.ZipFile(archive_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            from raid_lockouts import MANIFEST, read_lockouts
+            lockouts = read_lockouts(self.root.parent, self.config.get('realms', {}))
+            archive.writestr(MANIFEST, json.dumps({'version':1, 'records':lockouts}))
             member = zipfile.ZipInfo('WoWCombatLog.txt',
                 datetime.fromtimestamp(stat.st_mtime, self.zone).timetuple()[:6])
             member.compress_type = zipfile.ZIP_DEFLATED
@@ -380,6 +390,12 @@ class RaidWorker(threading.Thread):
 
     def _cleanup(self, now):
         cutoff = now-self.hours*3600
+        merge_backups = self.root/'.raid-merge-backups'
+        if merge_backups.exists():
+            for backup in merge_backups.iterdir():
+                reports = list(backup.glob('*/LOGS_CUT.zstd')) if backup.is_dir() else []
+                if reports and all(self.report_end(path.parent) < cutoff for path in reports):
+                    remove_owned(backup, merge_backups)
         expired = []
         logs_root = self.root/'LogsDir'
         for folder in logs_root.iterdir() if logs_root.exists() else []:

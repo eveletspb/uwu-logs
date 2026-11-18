@@ -160,3 +160,45 @@ A partial combat log cannot reveal earlier boss kills. Reports without an
 instance snapshot show a lower bound such as `≥2/9` with a “from log” hint;
 this is not presented as the complete lockout progress. Servers that do not
 provide encounter progress retain this lower-bound display.
+
+## Automatic remote export
+
+Set `remote_export_url` in the private `auto-config.json` to a UwU Logs server
+URL. Completed archives, including older imports, are uploaded after WoW
+closes. The original server label and timezone are preserved. Reports are
+checked on the destination before an archive is marked as exported.
+
+Failed exports remain queued; retry state survives restarts. A destination
+disk-space error delays retries for one hour. Local logs are retained under
+the normal retention policy. Export checkpoints are private and ignored by Git.
+
+Set `reports_url` to open reports on that server by default. The launcher opens
+its raid library, and local home/library/report URLs redirect there while
+preserving the report path and encounter query. Upload and maintenance endpoints
+continue running locally. When `reports_url` is empty, `remote_export_url` is
+used as the preferred viewer if configured.
+
+## One report per raid lockout
+
+Update `addon/RaidAutoLog/Progress.lua` in the game client and reload the UI.
+The addon records the actual instance save ID and difficulty using the classic
+saved-instance API. Automatic archives carry a small `uwu-lockouts.json`
+manifest. The client and destination server both need this version of the code.
+
+When the save ID matches, pauses, roster changes and client restarts append
+to the same report. Different save IDs, difficulties or reset periods remain
+separate. Without a reliable save ID, the importer keeps its legacy separation
+instead of guessing that two runs share a lockout. Overlapping captures are
+deduplicated without removing legitimate identical hits in the same timestamp.
+
+To combine existing reports known to share a lockout, stop the viewer and run
+the following **inside the project folder**, then restart the viewer:
+
+```sh
+python merge_raid.py REPORT_ID_1 REPORT_ID_2 REPORT_ID_3
+```
+
+The oldest report ID becomes canonical. Original report folders and the old
+index are kept in `.raid-merge-backups`; old links redirect to the combined
+report. The report defaults to boss segments so overnight pauses do not dilute
+DPS/HPS. Merge backups follow the configured report retention period.

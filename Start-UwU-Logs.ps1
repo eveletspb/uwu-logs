@@ -3,6 +3,13 @@ $ErrorActionPreference = 'Stop'
 $localRoot = $PSScriptRoot
 $pythonPath = Join-Path $localRoot '.venv\Scripts\pythonw.exe'
 $serverPath = Join-Path $localRoot 'local_server.py'
+$reportsBase = 'http://127.0.0.1:5000'
+$settingsPath = Join-Path $localRoot 'auto-config.json'
+if (Test-Path -LiteralPath $settingsPath) {
+    $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+    if ($settings.reports_url) { $reportsBase = $settings.reports_url.TrimEnd('/') }
+    elseif ($settings.remote_export_url) { $reportsBase = $settings.remote_export_url.TrimEnd('/') }
+}
 $healthy = $false
 try {
     $health = Invoke-RestMethod 'http://127.0.0.1:5000/local-health' -TimeoutSec 2
@@ -21,4 +28,4 @@ if (-not $healthy) {
     }
 }
 if (-not $healthy) { throw 'UwU Logs could not start. See local-server.err.log.' }
-if (-not $NoBrowser) { Start-Process 'http://127.0.0.1:5000/logs_list' }
+if (-not $NoBrowser) { Start-Process ($reportsBase + '/logs_list') }

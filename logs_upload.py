@@ -2,12 +2,13 @@ import json
 import re
 import subprocess
 import threading
+import zipfile
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from os import utime
-from shutil import disk_usage
-from time import perf_counter, sleep
+from shutil import disk_usage, copytree
+from time import perf_counter, sleep, time_ns
 
 import api_7z
 import h_server_fix
@@ -339,7 +340,7 @@ class CacheLineInt(dict[bytes, int]):
         return value
 
 class LogsSeparator:
-    def __init__(self, server: str=None, timestamp: float=None) -> None:
+    def __init__(self, server: str=None, timestamp: float=None, lockout_records=None, timezone_name='UTC') -> None:
         self.year = datetime.fromtimestamp(timestamp).year
         self.to_dt = to_dt_bytes_closure(self.year)
         self.server = server if server else "Unknown"
@@ -349,6 +350,8 @@ class LogsSeparator:
         self.cache_int = CacheLineInt()
         self.current_segment = self._new_slice()
         self.last_segment = self._new_slice()
+        self.lockout_records = lockout_records or []
+        self.timezone_name = timezone_name
 
     def _new_slice(self):
         return LogsSlice(self.server, self.year)
@@ -383,7 +386,20 @@ class LogsSeparator:
             return
 
         segment = None
-        if self.is_different_raid() or self.is_big_gap():
+        same_lockout = None
+        if self.lockout_records and self.last_segment:
+            from raid_lockouts import identity_for, same_lockout as matching_lockout
+            from zoneinfo import ZoneInfo
+            zone = ZoneInfo(self.timezone_name)
+            def identity(segment):
+                start = self.to_dt(segment[0]).replace(tzinfo=zone).timestamp()
+                end = self.to_dt(segment[-1]).replace(tzinfo=zone).timestamp()
+                return identity_for(segment.id, segment.info.bosses, start, end, self.lockout_records)
+            previous, current = identity(self.last_segment), identity(self.current_segment)
+            if previous or current:
+                same_lockout = matching_lockout(previous,current)
+        separate = (self.is_different_raid() or self.is_big_gap()) if same_lockout is None else not same_lockout
+        if separate:
             segment = self.last_segment
             self.last_segment = self.current_segment
         else:
@@ -632,6 +648,12 @@ class LogsArchiveParser(api_7z.SevenZipArchive):
 
     def parse_txt_files(self):
         full_pc = perf_counter()
+        self.lockout_records = []
+        if zipfile.is_zipfile(self.archive_path):
+            from raid_lockouts import MANIFEST, validate_manifest
+            with zipfile.ZipFile(self.archive_path) as source:
+                if MANIFEST in source.namelist() and source.getinfo(MANIFEST).file_size <= 2_000_000:
+                    self.lockout_records = validate_manifest(source.read(MANIFEST))
         all_text_files = self.get_all_files_with_suffix(".txt")
         if not all_text_files:
             raise FileNotFoundError("No text file present in archive")
@@ -640,7 +662,8 @@ class LogsArchiveParser(api_7z.SevenZipArchive):
         for file_line in all_text_files:
             # print(file_line)
             lines = self.read_file_into_stdout(file_line)
-            separator = LogsSeparator(server=self.server, timestamp=file_line.timestamp)
+            separator = LogsSeparator(server=self.server, timestamp=file_line.timestamp,
+                                      lockout_records=self.lockout_records, timezone_name=self.timezone)
             for segment in separator.generate_segments(lines):
                 self.save_segment(segment, file_line.timestamp)
                 self.adjust_mod_time(file_line, segment)
@@ -676,6 +699,19 @@ class LogsArchiveParser(api_7z.SevenZipArchive):
         path_slice_zstd_temp.zstd_write(data)
 
         path_slice_zstd = Directories.logs / raid_id / LOGS_CUT_NAME
+        if getattr(self, 'lockout_records', None) and path_slice_zstd.exists():
+            from raid_lockouts import merge_payloads
+            import zstd
+            data = merge_payloads([(raid_id, zstd.decompress(path_slice_zstd.read_bytes())), (raid_id, data)])
+            path_slice_zstd_temp.zstd_write(data)
+            backup = Directories.main / '.raid-merge-backups' / str(time_ns())
+            if not backup.resolve().is_relative_to(Directories.main.resolve()):
+                raise ValueError('Unsafe merge backup path')
+            backup.mkdir(parents=True, exist_ok=True)
+            copytree(path_slice_zstd.parent, backup / raid_id)
+            for cache_file in path_slice_zstd.parent.glob('*.json'):
+                if cache_file.name != 'LOCKOUT.json':
+                    cache_file.unlink()
         if self.forced and path_slice_zstd.parent.is_dir():
             nuke_folder(path_slice_zstd.parent)
         
@@ -699,7 +735,7 @@ class LogsArchiveParser(api_7z.SevenZipArchive):
         self.slices[raid_id] = logs_slice.info
         self.change_slice_status("Sliced", raid_id, pc=self.current_segment_pc)
 
-        if not self.forced and logs_slice.is_fully_processed():
+        if not self.forced and not getattr(self, 'lockout_records', None) and logs_slice.is_fully_processed():
             self.has_duplicates = True
             self.change_slice_status("Exists", raid_id, slice_done=True)
             return
