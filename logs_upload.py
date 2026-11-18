@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from os import utime
 from shutil import disk_usage, copytree
+from tempfile import TemporaryDirectory
 from time import perf_counter, sleep, time_ns
 
 import api_7z
@@ -695,15 +696,11 @@ class LogsArchiveParser(api_7z.SevenZipArchive):
         fixed_rows_gen = logs_fix.normalize_read_from_file(path_slice_txt)
         data = b'\n'.join(fixed_rows_gen)
 
-        path_slice_zstd_temp = self.upload_data.directory / f"{raid_id}.zstd"
-        path_slice_zstd_temp.zstd_write(data)
-
         path_slice_zstd = Directories.logs / raid_id / LOGS_CUT_NAME
         if getattr(self, 'lockout_records', None) and path_slice_zstd.exists():
             from raid_lockouts import merge_payloads
             import zstd
             data = merge_payloads([(raid_id, zstd.decompress(path_slice_zstd.read_bytes())), (raid_id, data)])
-            path_slice_zstd_temp.zstd_write(data)
             backup = Directories.main / '.raid-merge-backups' / str(time_ns())
             if not backup.resolve().is_relative_to(Directories.main.resolve()):
                 raise ValueError('Unsafe merge backup path')
@@ -714,14 +711,12 @@ class LogsArchiveParser(api_7z.SevenZipArchive):
                     cache_file.unlink()
         if self.forced and path_slice_zstd.parent.is_dir():
             nuke_folder(path_slice_zstd.parent)
-        
-        for _ in range(3):
-            try:
-                path_slice_zstd.parent.mkdir(parents=True, exist_ok=True)
-                path_slice_zstd_temp.replace(path_slice_zstd)
-                break
-            except FileNotFoundError:
-                continue
+
+        path_slice_zstd.parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(dir=path_slice_zstd.parent) as temp_dir:
+            path_slice_zstd_temp = PathExt(temp_dir) / LOGS_CUT_NAME
+            path_slice_zstd_temp.zstd_write(data)
+            path_slice_zstd_temp.replace(path_slice_zstd)
 
         self.change_slice_status("Saved zstd", raid_id, pc=pc)
 
