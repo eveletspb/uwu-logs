@@ -4,6 +4,7 @@ from datetime import datetime
 import pandas
 from raid_labels import raid_label
 from raid_labels import RAIDS
+from raid_fragments import JoinedRaid, grouped_index, raid_groups
 from raid_progress import read_snapshots, progress_for
 from zoneinfo import ZoneInfo
 import json
@@ -20,9 +21,12 @@ def recent_reports():
     saved = list(ROOT.parent.glob('WTF/Account/*/SavedVariables/RaidAutoLog.lua'))
     signature = (index.stat().st_mtime_ns, index.stat().st_size,
                  tuple((str(p), p.stat().st_mtime_ns) for p in saved))
+    frame = pandas.read_pickle(index)
+    groups = raid_groups(frame)
+    signature += (tuple(groups.items()),)
     if signature == _cache_signature:
         return _cache_rows
-    frame = pandas.read_pickle(index)
+    frame = grouped_index(frame)
     rows = []
     config = ROOT/'auto-config.json'
     settings = json.loads(config.read_text('utf-8')) if config.exists() else {}
@@ -35,7 +39,8 @@ def recent_reports():
         matches = [i for i, (_, bosses) in enumerate(RAIDS) if set(entry.get('fight', ())) & bosses]
         if len(matches) == 1:
             from logs_main import THE_LOGS
-            report = THE_LOGS(str(report_id))
+            parts = groups.get(report_id)
+            report = JoinedRaid(parts) if parts else THE_LOGS(str(report_id))
             kills = len({segment.encounter_name for segment in report.SEGMENTS_KILLS})
             stamp = started.replace(tzinfo=zone).timestamp()
             progress, progress_note = progress_for(matches[0], kills, str(entry.get('author', '')),

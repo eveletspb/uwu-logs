@@ -62,10 +62,14 @@ def add_log_entry(ip, method, msg):
 def load_report(report_id: str):
     now = datetime.now()
     ip = request.remote_addr
-    if report_id in OPENED_LOGS:
-        report = OPENED_LOGS[report_id]
-        report.last_access = now
-        return report
+    from raid_fragments import JoinedRaid, raid_groups
+
+    parts = raid_groups(logs_calendar.read_main_df()).get(report_id)
+    cached = OPENED_LOGS.get(report_id)
+    if (cached is not None and getattr(cached, "parts", None) == parts
+            and (not parts or cached.source_revisions == JoinedRaid.revisions(parts))):
+        cached.last_access = now
+        return cached
     
     if _validate is not None:
         _limit = _validate.rate_limited_reports(ip, "report", report_id)
@@ -74,7 +78,7 @@ def load_report(report_id: str):
             raise TooManyRequests(retry_after=_limit)
     
     CLEANER.start()
-    report = logs_main.THE_LOGS(report_id)
+    report = JoinedRaid(parts) if parts else logs_main.THE_LOGS(report_id)
     OPENED_LOGS[report_id] = report
     add_log_entry(ip, "OPENNED", report_id)
 

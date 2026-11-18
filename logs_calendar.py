@@ -118,12 +118,16 @@ def separate_to_days(df: pandas.DataFrame):
 
 @running_time
 def get_logs_list_filter_json(_filter):
-    df = read_main_df()
+    from raid_fragments import grouped_index
+
+    df = grouped_index(read_main_df())
     df = get_logs_list_df_filter(df, _filter)
     return json.dumps(list(df.index))
 
 def get_logs_list_df_filter_to_calendar_wrap(_filter):
-    df = read_main_df()
+    from raid_fragments import grouped_index
+
+    df = grouped_index(read_main_df())
     if df.empty:
         return {}
     
