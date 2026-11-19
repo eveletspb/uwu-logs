@@ -552,36 +552,142 @@ fn hex(value: &str) -> Option<String> {
     String::from_utf8(bytes).ok()
 }
 
-fn saved_manifest(game: &Path, realms: &BTreeMap<String, String>) -> io::Result<Value> {
+fn saved_variables(game: &Path) -> io::Result<Vec<String>> {
     let accounts = game.join("WTF/Account");
-    let mut records = Vec::new();
+    let mut entries = Vec::new();
     if accounts.is_dir() {
         for account in fs::read_dir(accounts)? {
             let file = account?.path().join("SavedVariables/RaidAutoLog.lua");
             if !file.is_file() {
                 continue;
             }
-            let mut input = String::new();
+            let mut contents = Vec::new();
             File::open(file)?
                 .take(2_000_001)
-                .read_to_string(&mut input)?;
-            if input.len() > 2_000_000 {
-                continue;
+                .read_to_end(&mut contents)?;
+            if contents.len() <= 2_000_000 {
+                entries.push(String::from_utf8_lossy(&contents).into_owned());
             }
-            records.extend(input.split('"').filter_map(|row| {
-                let [time, realm, player, instance, id, high, difficulty, reset, session] =
-                    row.strip_prefix("RAL2|")?.split('|').collect::<Vec<_>>().try_into().ok()?;
-                let realm = hex(realm)?;
-                let server = realms.get(realm.split(':').next().unwrap_or(&realm)).cloned().unwrap_or(realm);
-                Some(json!({"time":time.parse::<u64>().ok()?, "server":server, "player":hex(player)?,
-                    "instance":hex(instance)?, "id":hex(id)?, "high":hex(high)?, "difficulty":difficulty.parse::<u32>().ok()?,
-                    "reset":reset.parse::<u64>().ok()?, "session":session.parse::<u64>().ok()?}))
-            }));
         }
     }
+    Ok(entries)
+}
+
+fn resolve_realm(realm: String, realms: &BTreeMap<String, String>) -> String {
+    realms
+        .get(realm.split(':').next().unwrap_or(&realm))
+        .cloned()
+        .unwrap_or(realm)
+}
+
+fn saved_manifest(game: &Path, realms: &BTreeMap<String, String>) -> io::Result<Value> {
+    let saved = saved_variables(game)?;
+    let mut records = saved.iter().flat_map(|entry| entry.split('"')).filter_map(|row| {
+        let [time, realm, player, instance, id, high, difficulty, reset, session] =
+            row.strip_prefix("RAL2|")?.split('|').collect::<Vec<_>>().try_into().ok()?;
+        let server = resolve_realm(hex(realm)?, realms);
+        Some(json!({"time":time.parse::<u64>().ok()?, "server":server, "player":hex(player)?,
+            "instance":hex(instance)?, "id":hex(id)?, "high":hex(high)?, "difficulty":difficulty.parse::<u32>().ok()?,
+            "reset":reset.parse::<u64>().ok()?, "session":session.parse::<u64>().ok()?}))
+    }).collect::<Vec<_>>();
     records.sort_by_key(|value| std::cmp::Reverse(value["time"].as_u64().unwrap_or(0)));
     records.truncate(2000);
     Ok(json!({"version":1,"records":records}))
+}
+
+pub(crate) struct SavedProgress {
+    timezone: String,
+    records: Vec<Progress>,
+}
+
+struct Progress {
+    time: u64,
+    server: String,
+    player: String,
+    raid: usize,
+    total: u32,
+    completed: u32,
+    session: u64,
+}
+
+impl SavedProgress {
+    pub(crate) fn load(root: &Path) -> io::Result<Self> {
+        let Some(config) = Config::load(root)? else {
+            return Ok(Self {
+                timezone: "UTC".into(),
+                records: Vec::new(),
+            });
+        };
+        let source = root.join(&config.source);
+        let parent = source.parent().and_then(Path::parent).unwrap_or(root);
+        let saved = saved_variables(parent)?;
+        let records = saved
+            .iter()
+            .flat_map(|entry| entry.split('"'))
+            .filter_map(|row| {
+                let [time, realm, player, instance, total, completed, session] = row
+                    .strip_prefix("RAL1|")?
+                    .split('|')
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .ok()?;
+                let row = Progress {
+                    time: time.parse().ok()?,
+                    server: resolve_realm(hex(realm)?, &config.realms),
+                    player: hex(player)?,
+                    raid: *raidledger::combat::CATALOG.aliases.get(&hex(instance)?)?,
+                    total: total.parse().ok()?,
+                    completed: completed.parse().ok()?,
+                    session: session.parse().ok()?,
+                };
+                (row.total <= 100 && row.completed <= row.total).then_some(row)
+            })
+            .collect();
+        Ok(Self {
+            timezone: config.timezone,
+            records,
+        })
+    }
+
+    pub(crate) fn report(
+        &self,
+        report: &raidledger::reports::Report,
+        raid: usize,
+    ) -> Option<(u32, u32)> {
+        if self.records.is_empty() {
+            return None;
+        }
+        let mut parts = report.id.splitn(4, "--");
+        let date = parts.next()?;
+        let time = parts.next()?.get(..5)?.replace('-', ":");
+        let player = parts.next()?.to_lowercase();
+        let server = parts.next()?.to_lowercase();
+        let stamp = raidledger::combat::Stamp::parse(&format!(
+            "{}/{} {time}:00.000",
+            date.get(3..5)?,
+            date.get(6..8)?
+        ))?;
+        let year = 2000 + date.get(..2)?.parse::<u32>().ok()?;
+        let start = raidledger::lockouts::epoch(stamp, year, &self.timezone)?;
+        let length = report
+            .metadata
+            .time_index
+            .last()
+            .map_or(0, |(time, _)| *time);
+        self.records
+            .iter()
+            .filter(|row| {
+                row.raid == raid
+                    && row.player.to_lowercase() == player
+                    && row.server.to_lowercase() == server
+                    && (start.saturating_sub(43200)..=start.saturating_add(60))
+                        .contains(&row.session)
+                    && (row.session..=start.saturating_add(length).saturating_add(65))
+                        .contains(&row.time)
+            })
+            .max_by_key(|row| (row.session, row.time))
+            .map(|row| (row.completed, row.total))
+    }
 }
 
 fn send_archive(

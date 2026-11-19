@@ -87,7 +87,7 @@ struct LibraryRow {
     progress_note: &'static str,
 }
 
-fn library_row(report: Report) -> LibraryRow {
+fn library_row(report: Report, snapshots: Option<&auto_import::SavedProgress>) -> LibraryRow {
     let fields = report.id.splitn(4, "--").collect::<Vec<_>>();
     let year = report.id[..2].parse::<u32>().unwrap_or(0) + 2000;
     let date = format!("{year}{}", fields[0].get(2..).unwrap_or(""));
@@ -112,21 +112,34 @@ fn library_row(report: Report) -> LibraryRow {
     let raids = CATALOG
         .raids
         .iter()
-        .filter(|raid| fights.iter().any(|boss| raid.bosses.contains(*boss)))
+        .enumerate()
+        .filter(|(_, raid)| fights.iter().any(|boss| raid.bosses.contains(*boss)))
         .collect::<Vec<_>>();
     let raid_label = if raids.is_empty() {
         "Рейдовый отчёт".to_owned()
     } else {
         raids
             .iter()
-            .map(|raid| raid.name.as_str())
+            .map(|(_, raid)| raid.name.as_str())
             .collect::<Vec<_>>()
             .join(" / ")
     };
-    let progress = if raids.len() == 1 {
-        format!("≥{}/{}", kills.len(), raids[0].total)
+    let (progress, progress_note) = if let [(index, raid)] = raids.as_slice() {
+        if let Some((completed, total)) =
+            snapshots.and_then(|snapshots| snapshots.report(&report, *index))
+        {
+            (
+                format!("{completed}/{total}"),
+                "Прогресс сохранения, включая боссов до входа в рейд",
+            )
+        } else {
+            (
+                format!("≥{}/{}", kills.len(), raid.total),
+                "Количество убийств, подтверждённых журналом",
+            )
+        }
     } else {
-        "—".to_owned()
+        ("—".to_owned(), "Рейд не определён")
     };
     LibraryRow {
         author: fields[2].into(),
@@ -141,7 +154,7 @@ fn library_row(report: Report) -> LibraryRow {
         raid_label,
         fights: fights.into_iter().collect::<Vec<_>>().join(" · "),
         progress,
-        progress_note: "Количество убийств, подтверждённых журналом",
+        progress_note,
     }
 }
 
@@ -160,6 +173,7 @@ async fn library(
     let path = uri.path().to_owned();
     blocking(move || {
         let mut rows = Vec::new();
+        let snapshots = auto_import::SavedProgress::load(&app.root).ok();
         let mut realms = std::collections::BTreeSet::new();
         for id in list_ids(&app.root)?
             .into_iter()
@@ -177,7 +191,7 @@ async fn library(
                 continue;
             }
             match Report::open_group(&app.root, &id, &app.legacy_groups) {
-                Ok(report) => rows.push(library_row(report)),
+                Ok(report) => rows.push(library_row(report, snapshots.as_ref())),
                 Err(error) => eprintln!("Cannot open {id}: {error}"),
             }
         }
@@ -188,6 +202,69 @@ async fn library(
             "home.html",
             context! { request => context! { path }, LOCAL_REPORTS => rows },
         )
+    })
+    .await
+}
+
+async fn library_filter(
+    State(app): State<App>,
+    body: axum::body::Bytes,
+) -> Result<Json<Vec<String>>, Error> {
+    let mut filter =
+        serde_json::from_slice::<std::collections::BTreeMap<String, serde_json::Value>>(&body)
+            .map_err(|_| Error(StatusCode::BAD_REQUEST, "Invalid report filter"))?;
+    filter.retain(|key, value| {
+        matches!(
+            key.as_str(),
+            "year" | "month" | "day" | "time" | "author" | "server" | "player" | "fight"
+        ) && (value.as_str().is_some_and(|text| !text.is_empty())
+            || value.as_u64().is_some_and(|number| number > 0))
+    });
+    if filter.is_empty() {
+        return Err(Error(
+            StatusCode::IM_A_TEAPOT,
+            "At least one report filter is required",
+        ));
+    }
+    blocking(move || {
+        let mut matches = Vec::new();
+        for id in list_ids(&app.root)?
+            .into_iter()
+            .filter(|id| !app.legacy_groups.is_fragment(id))
+        {
+            let report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
+            let fields = id.splitn(4, "--").collect::<Vec<_>>();
+            let date = fields[0].split('-').collect::<Vec<_>>();
+            let yes = filter.iter().all(|(key, value)| {
+                let text = value.as_str().unwrap_or_default();
+                let number = value.as_u64().or_else(|| text.parse().ok());
+                let component = |index| {
+                    date.get(index)
+                        .and_then(|value: &&str| value.parse::<u64>().ok())
+                };
+                match key.as_str() {
+                    "year" => component(0).is_some_and(|year| {
+                        number.is_some_and(|number| number == year || number == year + 2000)
+                    }),
+                    "month" => component(1) == number,
+                    "day" => component(2) == number,
+                    "time" => fields[1].replace('-', ":").contains(text),
+                    "author" => fields[2].contains(text),
+                    "server" => fields[3].contains(text),
+                    "player" => report.metadata.players.values().any(|name| name == text),
+                    "fight" => report
+                        .metadata
+                        .encounters
+                        .iter()
+                        .any(|fight| fight.boss == text),
+                    _ => false,
+                }
+            });
+            if yes {
+                matches.push(id);
+            }
+        }
+        Ok(Json(matches))
     })
     .await
 }
@@ -865,7 +942,7 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .route("/", get(library))
         .route("/about", get(about))
         .route("/support", get(about))
-        .route("/logs_list", get(library))
+        .route("/logs_list", get(library).post(library_filter))
         .route("/raid_calendar", get(library))
         .route("/local-health", get(health))
         .route("/local-status", get(auto_import::status))

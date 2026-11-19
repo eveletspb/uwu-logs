@@ -81,6 +81,8 @@ fragments that belong together.
 
 ### Local Windows installation
 
+The native launcher targets Windows 10 version 1903 and later.
+
 Place the project next to the game's `Logs` and `WTF` directories. Copy
 `auto-config.example.json` to `auto-config.json`. Set the log location,
 timezone and realm mapping as needed. Build for Windows with

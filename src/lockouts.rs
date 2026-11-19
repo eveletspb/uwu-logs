@@ -3,6 +3,7 @@ use crate::reports::Metadata;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, BufRead, Read};
+#[cfg(not(windows))]
 use std::process::Command;
 
 #[derive(Default, Deserialize)]
@@ -142,7 +143,7 @@ impl Manifest {
     }
 }
 
-fn epoch(stamp: Stamp, year: u32, timezone: &str) -> Option<u64> {
+pub fn epoch(stamp: Stamp, year: u32, timezone: &str) -> Option<u64> {
     if timezone == "UTC" || timezone.is_empty() {
         let leap = |year: u32| {
             year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
@@ -158,9 +159,17 @@ fn epoch(stamp: Stamp, year: u32, timezone: &str) -> Option<u64> {
         || !timezone
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || b"/_-+".contains(&byte))
-        || !std::path::Path::new("/usr/share/zoneinfo")
-            .join(timezone)
-            .is_file()
+    {
+        return None;
+    }
+    named_epoch(stamp, year, timezone)
+}
+
+#[cfg(not(windows))]
+fn named_epoch(stamp: Stamp, year: u32, timezone: &str) -> Option<u64> {
+    if !std::path::Path::new("/usr/share/zoneinfo")
+        .join(timezone)
+        .is_file()
     {
         return None;
     }
@@ -180,6 +189,110 @@ fn epoch(stamp: Stamp, year: u32, timezone: &str) -> Option<u64> {
         return None;
     }
     String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+}
+
+#[cfg(windows)]
+fn named_epoch(stamp: Stamp, year: u32, timezone: &str) -> Option<u64> {
+    use std::ffi::{c_char, c_void};
+    use std::ptr::{null, null_mut};
+
+    #[link(name = "Ole32")]
+    unsafe extern "system" {
+        fn CoInitializeEx(reserved: *mut c_void, flags: u32) -> i32;
+        fn CoUninitialize();
+    }
+
+    #[link(name = "icu")]
+    unsafe extern "C" {
+        fn ucal_getCanonicalTimeZoneID(
+            id: *const u16,
+            len: i32,
+            result: *mut u16,
+            capacity: i32,
+            system: *mut i8,
+            error: *mut i32,
+        ) -> i32;
+        fn ucal_open(
+            id: *const u16,
+            len: i32,
+            locale: *const c_char,
+            calendar_type: i32,
+            error: *mut i32,
+        ) -> *mut c_void;
+        fn ucal_setDateTime(
+            calendar: *mut c_void,
+            year: i32,
+            month: i32,
+            day: i32,
+            hour: i32,
+            minute: i32,
+            second: i32,
+            error: *mut i32,
+        );
+        fn ucal_getMillis(calendar: *const c_void, error: *mut i32) -> f64;
+        fn ucal_close(calendar: *mut c_void);
+    }
+
+    struct Com(bool);
+    impl Drop for Com {
+        fn drop(&mut self) {
+            if self.0 {
+                unsafe { CoUninitialize() };
+            }
+        }
+    }
+    struct Calendar(*mut c_void);
+    impl Drop for Calendar {
+        fn drop(&mut self) {
+            unsafe { ucal_close(self.0) };
+        }
+    }
+
+    let initialized = unsafe { CoInitializeEx(null_mut(), 0) };
+    if initialized < 0 && initialized as u32 != 0x80010106 {
+        return None;
+    }
+    let _com = Com(initialized >= 0);
+    let id = timezone.encode_utf16().collect::<Vec<_>>();
+    let mut canonical = [0u16; 128];
+    let mut system = 0i8;
+    let mut error = 0;
+    let len = unsafe {
+        ucal_getCanonicalTimeZoneID(
+            id.as_ptr(),
+            id.len() as i32,
+            canonical.as_mut_ptr(),
+            canonical.len() as i32,
+            &mut system,
+            &mut error,
+        )
+    };
+    if error > 0 || system == 0 || len <= 0 || len as usize >= canonical.len() {
+        return None;
+    }
+    // ICU takes a zero-based month in a Gregorian calendar.
+    let calendar = unsafe { ucal_open(canonical.as_ptr(), len, null(), 1, &mut error) };
+    if calendar.is_null() {
+        return None;
+    }
+    let calendar = Calendar(calendar);
+    if error > 0 {
+        return None;
+    }
+    unsafe {
+        ucal_setDateTime(
+            calendar.0,
+            year as i32,
+            stamp.month as i32 - 1,
+            stamp.day as i32,
+            stamp.hour as i32,
+            stamp.minute as i32,
+            stamp.second as i32,
+            &mut error,
+        );
+    }
+    let millis = unsafe { ucal_getMillis(calendar.0, &mut error) };
+    (error <= 0 && millis.is_finite() && millis >= 0.0).then(|| (millis / 1000.0) as u64)
 }
 
 type TimeKey = (u32, u64);
