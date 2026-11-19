@@ -2,11 +2,9 @@
   "source": "../Logs/WoWCombatLog.txt",
   "raw_archive": "../Logs/RaidArchive",
   "timezone": "UTC",
-  "retention_hours": 720,
   "poll_seconds": 10,
   "settle_seconds": 8,
-  "defer_until_client_exit": true,
-  "client_sha256": "",
+  "server": "Unknown",
   "realms": {},
   "remote_export_url": "",
   "reports_url": ""

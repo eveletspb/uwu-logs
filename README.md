@@ -1,4 +1,4 @@
-# UwU Logs
+# RaidLedger
 
 ## Updated design
 
@@ -46,26 +46,19 @@ after WoW closes; manual import is also available.
 
 <https://uwu-logs.xyz/>
 
-UwU Logs is a World of Warcraft combat log parser.
+RaidLedger is a Rust combat-log parser and raid viewer for World of Warcraft 3.3.5a, originally forked from UwU Logs.
 
 Supports any Wrath of the Lich King (3.3.5) server.
 
 ❤️ Inspired by World of Logs, LegacyPlayers and Warcraft Logs.
 
-## Local raid analytics fork
+## Run RaidLedger
 
-This fork adds a responsive dark UI, a recent-raid library, report summaries,
-readable damage/healing tables, and visible report navigation. The existing
-parser and encounter calculations remain in place.
-
-### Rust server
-
-The Rust server runs independently of the Python viewer. Build with
-`cargo build --locked --release --jobs 8` and launch from the repository
-directory with `target/release/uwu-logs`. It listens on `127.0.0.1:5000`
-by default. Set `UWU_ROOT` to the data directory and `UWU_BIND` to change
-the listener. On hosts where the 7-Zip executable is named `7z`, set
-`UWU_7Z=7z` for archive imports.
+Build with `cargo build --locked --release --jobs 8` and launch from the
+repository directory with `target/release/raidledger`. The server listens on
+`127.0.0.1:5000` by default. `RAIDLEDGER_ROOT` selects the data directory,
+`RAIDLEDGER_BIND` sets the listen address, and `RAIDLEDGER_7Z` selects the
+7-Zip executable for archive imports.
 
 One successful upload produces one `LogsDir/<report-id>.uwu` file. The
 file contains independently compressed Zstandard blocks and a versioned
@@ -88,44 +81,31 @@ fragments that belong together.
 
 ### Local Windows installation
 
-Place this repository in a subfolder of your WoW 3.3.5a installation.
-Create a Python 3.12 virtual environment named `.venv`, then install
-`requirements-local.txt`. Copy `auto-config.example.json` to `auto-config.json`
-and set your client log path, timezone and realm-address mapping.
+Place the project next to the game's `Logs` and `WTF` directories. Copy
+`auto-config.example.json` to `auto-config.json`. Set the log location,
+timezone and realm mapping as needed. Build for Windows with
+`cargo build --locked --release --jobs 8` or put an existing
+`raidledger.exe` next to `Start-RaidLedger.ps1`, then run the script from
+PowerShell. The previous `Start-UwU-Logs.ps1` script forwards to the new
+launcher. Use `-NoBrowser` for a background start.
 
-Run `python -X utf8 local_server.py` and visit `http://127.0.0.1:5000/`.
-Only the loopback interface is bound. Import accepts the raw `WoWCombatLog.txt`
-as well as archives; the original upstream 7-Zip executable and `7z.dll` are
-needed for archive parsing. Download the optional icon pack linked below.
+Install `7z.exe` or set `RAIDLEDGER_7Z` for archive imports and remote
+export. Copy `addon/RaidAutoLog` into WoW's `Interface/AddOns` directory.
+It uses DBM-Core callbacks to record raid encounters. RaidLedger waits
+for WoW to exit and the journal to stop changing before importing.
+The original raw journal is retained in the configured `raw_archive`
+folder, and interrupted imports resume from the pending capture.
 
-Copy `addon/RaidAutoLog` to your client's `Interface/AddOns` directory. It uses
-DBM-Core pull/kill/wipe callbacks to record only raid boss encounters.
-By default, automatic import, calendar indexing, journal rotation and 30-day
-retention run only after WoW closes. Files held open by WoW are never rotated.
-Logs, local config, downloaded runtimes and personal state are not committed.
+### Docker
 
-## Self hosting
+`deploy/rust.Dockerfile` builds the standalone server. The migration
+configuration `deploy/compose.raidledger.yaml` reuses the existing UwU Logs
+volumes for reports, raw archives, uploads, auxiliary databases and game logs.
+Set `RAIDLEDGER_HOST` to the server's LAN address when remote access is needed.
+Back up the original volumes and separately capture `_report_aliases.json`
+if present. Copy that file into the RaidLedger state volume before startup.
 
-- Install packages from `requirements.txt`
-
-- Run `python Z_SERVER.py` OR `gunicorn3 Z_SERVER:SERVER --port 5000 -D`
-
-- Visit <http://localhost:5000/>
-
-#### Optional
-##### Top
-
-- Run `python server_top.py` OR `uvicorn server_top:app --port 5020 --proxy-headers`
-
-##### File uploads
-
-- Run `python server_upload.py` OR `uvicorn server_upload:app --port 5010 --proxy-headers`
-
-##### Download spells/classes icons pack
-
-- [Google Drive download](https://drive.google.com/file/d/17DyiCJts01CkFIkd0-G1dVAypIlxd0pP)
-
-- Extract to root folder.
+The optional icon pack is available from [the original project](https://drive.google.com/file/d/17DyiCJts01CkFIkd0-G1dVAypIlxd0pP).
 
 ## Showcase
 
@@ -208,22 +188,18 @@ attempts. `damage` is outgoing damage including attributed pets, `healing`
 is effective healing including attributed absorbs, `damage_taken` counts
 damage received by the character, and `deaths` counts player `UNIT_DIED`
 events. DPS, HPS and DTPS use the full attempt duration or the sum of all
-attempt durations for the report. Rates are null for zero duration. The server
-streams attempts as they are calculated, then writes the report totals. The
-response is a single JSON document.
+attempt durations for the report. Rates are null for zero duration. The response is a single JSON document.
 
 An unknown report returns HTTP 404. An unsupported format returns HTTP 400.
 
 ## Automatic remote export
 
-Set `remote_export_url` in the private `auto-config.json` to a UwU Logs server
-URL. Completed archives, including older imports, are uploaded after WoW
-closes. The original server label and timezone are preserved. Reports are
+Set `remote_export_url` in the private `auto-config.json` to a RaidLedger server
+URL. Completed captures are uploaded after WoW closes. The original server label and timezone are preserved. Reports are
 checked on the destination before an archive is marked as exported.
 
-Failed exports remain queued; retry state survives restarts. A destination
-disk-space error delays retries for one hour. Local logs are retained under
-the normal retention policy. Export checkpoints are private and ignored by Git.
+Failed exports remain queued and retry after a restart. Original reports,
+raw archives and export checkpoints are retained on disk.
 
 Set `reports_url` to open reports on that server by default. The launcher opens
 its raid library, and local home/library/report URLs redirect there while
@@ -248,10 +224,11 @@ To combine existing reports known to share a lockout, stop the viewer and run
 the following **inside the project folder**, then restart the viewer:
 
 ```sh
-python merge_raid.py REPORT_ID_1 REPORT_ID_2 REPORT_ID_3
+./target/release/raidledger merge REPORT_ID_1 REPORT_ID_2 REPORT_ID_3
 ```
 
-The oldest report ID becomes canonical. Original report folders and the old
-index are kept in `.raid-merge-backups`; old links redirect to the combined
-report. The report defaults to boss segments so overnight pauses do not dilute
-DPS/HPS. Merge backups follow the configured report retention period.
+The oldest report ID becomes canonical. The original fragment files are
+retained and the other IDs continue opening the combined report. When a
+native report is replaced, its previous version is linked in
+`LogsDir/.raid-merge-backups`. The report defaults to boss segments so
+overnight pauses do not dilute DPS/HPS.

@@ -10,13 +10,13 @@ FROM debian:trixie-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends 7zip curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --uid 10001 --no-create-home uwu \
+    && useradd --uid 10001 --no-create-home raidledger \
     && mkdir -p /data/LogsDir /data/uploads \
-    && chown -R uwu /data
-COPY --from=build /build/target/release/uwu-logs /usr/local/bin/uwu-logs
+    && chown -R raidledger /data
+COPY --from=build /build/target/release/raidledger /usr/local/bin/raidledger
 COPY templates/ /app/templates/
 COPY static/ /app/static/
-ENV UWU_ROOT=/data UWU_ASSETS=/app UWU_BIND=0.0.0.0:5000 UWU_7Z=7z
+ENV RAIDLEDGER_ROOT=/data RAIDLEDGER_ASSETS=/app RAIDLEDGER_BIND=0.0.0.0:5000 RAIDLEDGER_7Z=7z
 WORKDIR /app
-USER uwu
-CMD ["uwu-logs"]
+USER raidledger
+CMD ["raidledger"]

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html style="background-color: black;">
 <head>
-  <title>UwU Logs{% if REPORT_NAME %} - {{ REPORT_NAME }}{% endif %}</title>
+  <title>{{ "RaidLedger" if RUST_VIEW else "UwU Logs" }}{% if REPORT_NAME %} - {{ REPORT_NAME }}{% endif %}</title>
   <meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0'>
   <link rel="stylesheet" type="text/css" href="/static/style.css?v=241209-2">
   <link rel="stylesheet" type="text/css" href="/static/ubuntu.css">
@@ -15,7 +15,7 @@
 <body>
   {% if not RUST_VIEW or AUTO_IMPORT %}<script defer src="/static/local-status.js"></script>{% endif %}
   <nav aria-label="Основная навигация">
-    <a id="home-button" href="/">UwU Logs<small>RAID ANALYTICS</small></a>
+    <a id="home-button" href="/">{{ "RaidLedger" if RUST_VIEW else "UwU Logs" }}<small>RAID ANALYTICS</small></a>
     <div id="top-nav">
       <a href="/logs_list" class="{{ 'active' if request.path == '/' or request.path[:10] == '/logs_list' else '' }}">Рейды</a>
       <a href="/upload" class="{{ 'active' if request.path[:7] == '/upload' else '' }}">Импорт</a>

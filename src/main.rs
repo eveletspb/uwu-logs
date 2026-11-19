@@ -7,6 +7,9 @@ use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::{Json, Router, routing::get};
 use minijinja::{Environment, context, path_loader};
+use raidledger::combat::CATALOG;
+use raidledger::metrics::{aggregate, player_spells};
+use raidledger::reports::{Encounter, LegacyGroups, Report, import_log, list_ids};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs::{self, File};
@@ -16,9 +19,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio_util::io::{ReaderStream, SyncIoBridge};
 use tower_http::services::ServeDir;
-use uwu_logs::combat::CATALOG;
-use uwu_logs::metrics::{aggregate, player_spells};
-use uwu_logs::reports::{Encounter, LegacyGroups, Report, import_log, list_ids};
 
 #[derive(Clone)]
 struct App {
@@ -199,7 +199,7 @@ fn render_calendar(
     reports: Vec<LibraryRow>,
     realms: std::collections::BTreeSet<String>,
 ) -> Result<Html<String>, Error> {
-    use uwu_logs::combat::days_in_month;
+    use raidledger::combat::days_in_month;
     let (default_year, default_month) = reports
         .first()
         .map(|report| {
@@ -435,7 +435,7 @@ async fn casts(
     State(app): State<App>,
     UrlPath(id): UrlPath<String>,
     Json(query): Json<TimelineQuery>,
-) -> Result<Json<uwu_logs::timeline::Timeline>, Error> {
+) -> Result<Json<raidledger::timeline::Timeline>, Error> {
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
         let encounter = report
@@ -447,7 +447,7 @@ async fn casts(
             })
             .ok_or(Error(StatusCode::BAD_REQUEST, "Unknown encounter"))?
             .clone();
-        Ok(Json(uwu_logs::timeline::build(
+        Ok(Json(raidledger::timeline::build(
             &mut report,
             &encounter,
             &query.name,
@@ -510,7 +510,7 @@ async fn render_section(
 ) -> Result<Html<String>, Error> {
     let path = uri.path().to_owned();
     blocking(move || {
-        use uwu_logs::analysis::{self, View};
+        use raidledger::analysis::{self, View};
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
         let selected = select(&mut report, &query)?;
         let query = uri
@@ -527,7 +527,7 @@ async fn render_section(
         if let Some((boss, heading)) = mechanic {
             let relevant = report.metadata.encounters.iter().filter(|fight| fight.boss_slug == boss)
                 .map(|fight| context! { query => fight.query(), label => format!("Попытка {}", fight.attempt + 1) }).collect::<Vec<_>>();
-            let tables = uwu_logs::mechanics::analyze(&mut report, &selected.into_iter()
+            let tables = raidledger::mechanics::analyze(&mut report, &selected.into_iter()
                 .filter(|fight| fight.boss_slug == boss).collect::<Vec<_>>(), &section)?;
             return app.render("raid_mechanics.html", context! {
                 request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id, query, heading, tables, relevant,
@@ -618,7 +618,7 @@ async fn dps(
             .sec
             .and_then(|value| value.as_u64().or_else(|| value.as_str()?.parse().ok()))
             .unwrap_or(0);
-        Ok(Json(uwu_logs::metrics::dps(
+        Ok(Json(raidledger::metrics::dps(
             &mut report,
             &selected,
             query.player_name.as_deref(),
@@ -643,7 +643,7 @@ async fn comparison(
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
         let selected = select(&mut report, &query)?;
-        Ok(Json(uwu_logs::compare::compare(
+        Ok(Json(raidledger::compare::compare(
             &mut report,
             &selected,
             &data.class,
@@ -685,7 +685,7 @@ async fn search_spells(
         .map_err(|_| Error(StatusCode::BAD_REQUEST, "Invalid spell filter"))?;
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
-        Ok(Json(uwu_logs::compare::spell_search(
+        Ok(Json(raidledger::compare::spell_search(
             &mut report,
             &data.filter,
         )?))
@@ -791,7 +791,7 @@ fn app_env(key: &str, old: &str) -> Option<std::ffi::OsString> {
 }
 
 async fn health() -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "app": "UwU Logs Rust", "local_only": true }))
+    Json(serde_json::json!({ "app": "RaidLedger", "local_only": true }))
 }
 
 #[tokio::main]
@@ -803,7 +803,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .skip(2)
                 .collect::<Vec<_>>()
                 .try_into()
-                .map_err(|_| "usage: uwu-logs import <combat-log.txt> <year> <server>")?;
+                .map_err(|_| "usage: raidledger import <combat-log.txt> <year> <server>")?;
             let id = import_log(
                 &root,
                 BufReader::new(File::open(log)?),
@@ -814,12 +814,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some("merge") => {
             let ids = env::args().skip(2).collect::<Vec<_>>();
-            println!("{}", uwu_logs::reports::merge_reports(&root, &ids)?);
+            println!("{}", raidledger::reports::merge_reports(&root, &ids)?);
         }
         Some("summary") => {
             let id = env::args()
                 .nth(2)
-                .ok_or("usage: uwu-logs summary <report-id>")?;
+                .ok_or("usage: raidledger summary <report-id>")?;
             let mut report = Report::open_group(&root, &id, &LegacyGroups::load(&root)?)?;
             let encounters = report.metadata.encounters.clone();
             serde_json::to_writer(io::stdout().lock(), &aggregate(&mut report, &encounters)?)?;

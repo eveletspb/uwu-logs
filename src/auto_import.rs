@@ -4,6 +4,8 @@ use axum::extract::{Request, State};
 use axum::http::{Method, Uri, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Redirect, Response};
+use raidledger::lockouts::Manifest;
+use raidledger::reports::import_capture;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -14,8 +16,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use uwu_logs::lockouts::Manifest;
-use uwu_logs::reports::import_capture;
 
 #[derive(Deserialize)]
 #[serde(default)]
@@ -278,7 +278,7 @@ impl Worker {
             for year in 1970..capture_year {
                 end_millis = end_millis.saturating_sub(
                     (1..=12)
-                        .map(|month| u64::from(uwu_logs::combat::days_in_month(year, month)))
+                        .map(|month| u64::from(raidledger::combat::days_in_month(year, month)))
                         .sum::<u64>()
                         * 86_400_000,
                 );
@@ -329,7 +329,7 @@ impl Worker {
         let id = pending
             .file_name()
             .and_then(|value| value.to_str())
-            .filter(|value| uwu_logs::reports::valid_capture(value))
+            .filter(|value| raidledger::reports::valid_capture(value))
             .ok_or_else(|| io::Error::other("invalid pending capture directory"))?;
         let raw = pending.join("WoWCombatLog.txt");
         let manifest_file = pending.join("uwu-lockouts.json");
@@ -415,7 +415,7 @@ impl Worker {
     }
 }
 
-fn first_stamp(mut file: impl io::BufRead) -> io::Result<Option<uwu_logs::combat::Stamp>> {
+fn first_stamp(mut file: impl io::BufRead) -> io::Result<Option<raidledger::combat::Stamp>> {
     let mut row = String::new();
     for _ in 0..20 {
         row.clear();
@@ -426,7 +426,7 @@ fn first_stamp(mut file: impl io::BufRead) -> io::Result<Option<uwu_logs::combat
             .trim_start_matches('\u{feff}')
             .split_once("  ")
             .or_else(|| row.split_once(','))
-            .and_then(|(stamp, _)| uwu_logs::combat::Stamp::parse(stamp));
+            .and_then(|(stamp, _)| raidledger::combat::Stamp::parse(stamp));
         if stamp.is_some() {
             return Ok(stamp);
         }
@@ -639,7 +639,7 @@ fn send_archive(
                     .into_iter()
                     .flatten()
                     .filter(|(id, value)| {
-                        uwu_logs::reports::valid_id(id) && value["done"].as_i64() == Some(1)
+                        raidledger::reports::valid_id(id) && value["done"].as_i64() == Some(1)
                     })
                     .map(|(id, _)| id.to_owned())
                     .collect::<Vec<_>>();
@@ -744,13 +744,16 @@ mod tests {
         assert_eq!(fs::read(&source).unwrap(), raw);
         worker.tick(|| Ok(false)).unwrap();
         assert!(!source.exists());
-        let reports = uwu_logs::reports::list_ids(&worker.root).unwrap();
+        let reports = raidledger::reports::list_ids(&worker.root).unwrap();
         assert_eq!(reports.len(), 1);
         let backup = sorted_entries(&raw_archive).unwrap();
         assert_eq!(backup.len(), 1);
         assert_eq!(fs::read(&backup[0]).unwrap(), raw);
         worker.tick(|| Ok(false)).unwrap();
-        assert_eq!(uwu_logs::reports::list_ids(&worker.root).unwrap(), reports);
+        assert_eq!(
+            raidledger::reports::list_ids(&worker.root).unwrap(),
+            reports
+        );
         fs::remove_dir_all(fixture).unwrap();
     }
 

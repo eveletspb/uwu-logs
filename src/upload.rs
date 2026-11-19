@@ -5,6 +5,8 @@ use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use minijinja::context;
+use raidledger::lockouts::Manifest;
+use raidledger::reports::{import_capture, valid_capture};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -16,8 +18,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use uwu_logs::lockouts::Manifest;
-use uwu_logs::reports::{import_capture, valid_capture};
 
 const CHUNK_SIZE: usize = 256 * 1024;
 const MAX_CHUNKS: usize = 32_768;
