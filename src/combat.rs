@@ -8,12 +8,22 @@ pub const NIL_GUID: &str = "0x0000000000000000";
 pub struct Catalog {
     pub bosses: BTreeMap<String, String>,
     pub minimum_seconds: BTreeMap<String, u64>,
+    pub raw_bosses: BTreeSet<String>,
+    pub group_leaders: BTreeMap<String, String>,
+    pub cowards: BTreeSet<String>,
+    pub idle_seconds: BTreeMap<String, u64>,
+    pub max_tail: BTreeMap<String, usize>,
+    pub flags: BTreeSet<String>,
+    pub ignored_spell_ids: BTreeSet<String>,
+    pub some_boss_spells: BTreeSet<String>,
+    pub can_be_short: BTreeSet<String>,
     pub raids: Vec<Raid>,
 }
 
 #[derive(Deserialize)]
 pub struct Raid {
     pub name: String,
+    pub total: usize,
     pub bosses: BTreeSet<String>,
 }
 
@@ -43,7 +53,7 @@ pub struct Stamp {
     pub millis: u32,
 }
 
-fn days_in_month(year: u32, month: u32) -> u32 {
+pub fn days_in_month(year: u32, month: u32) -> u32 {
     match month {
         2 if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) => {
             29
@@ -99,7 +109,7 @@ impl Stamp {
 
     pub fn relative_to(self, first: Self, year: u32) -> i64 {
         let origin = first.millis_of_year(year) as i64;
-        if first.month > self.month + 6 {
+        if first.month > self.month + 6 || self.month > first.month + 6 {
             let end = Self {
                 month: 12,
                 day: 31,
@@ -108,7 +118,14 @@ impl Stamp {
                 second: 59,
                 millis: 999,
             };
-            return (end.millis_of_year(year) + 1 + self.millis_of_year(year + 1)) as i64 - origin;
+            if first.month > self.month + 6 {
+                return (end.millis_of_year(year) + 1 + self.millis_of_year(year + 1)) as i64
+                    - origin;
+            }
+            let prior = year.saturating_sub(1);
+            return self.millis_of_year(prior) as i64
+                - (end.millis_of_year(prior) + 1) as i64
+                - origin;
         }
         self.millis_of_year(year) as i64 - origin
     }
@@ -137,9 +154,10 @@ impl<'a> Event<'a> {
         let source_name = fields.next()?;
         let target = fields.next()?;
         let target_name = fields.next()?;
-        if !kind
-            .bytes()
-            .all(|byte| byte.is_ascii_uppercase() || byte == b'_')
+        if kind.is_empty()
+            || !kind
+                .bytes()
+                .all(|byte| byte.is_ascii_uppercase() || byte == b'_')
             || !guid(source)
             || !guid(target)
         {
@@ -212,7 +230,15 @@ pub fn normalize(line: &str, output: &mut String) {
     {
         return;
     }
-    let fields = line[first_column_end + 1..].split(',').collect::<Vec<_>>();
+    let rest = &line[first_column_end + 1..];
+    let replaced;
+    let rest = if rest.contains(", ") {
+        replaced = rest.replace(", ", " ");
+        replaced.as_str()
+    } else {
+        rest
+    };
+    let fields = rest.split(',').collect::<Vec<_>>();
     let [source, source_name, _, target, target_name, _, rest @ ..] = fields.as_slice() else {
         return;
     };

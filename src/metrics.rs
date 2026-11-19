@@ -129,10 +129,21 @@ pub fn aggregate(report: &mut Report, encounters: &[Encounter]) -> io::Result<Su
             (
                 encounter,
                 BTreeMap::<String, Totals>::new(),
-                Absorbs::default(),
+                Some(Absorbs::default()),
             )
         })
         .collect::<Vec<_>>();
+    let finalize = |players: &mut BTreeMap<String, Totals>, absorbs: Absorbs| {
+        for (source, value) in absorbs.finish(&classes, year) {
+            let source = units
+                .get(&source)
+                .and_then(|unit| unit.master_guid.as_deref())
+                .unwrap_or(&source);
+            if roster.contains_key(source) {
+                players.entry(source.into()).or_default().healing += value;
+            }
+        }
+    };
     if let Some(first) = encounters.first() {
         let end = encounters
             .iter()
@@ -142,7 +153,16 @@ pub fn aggregate(report: &mut Report, encounters: &[Encounter]) -> io::Result<Su
         let mut next = 0;
         let mut current = Vec::<usize>::new();
         report.visit(Some(first.start..end), |row, line| {
-            current.retain(|index| row < encounters[*index].end);
+            current.retain(|index| {
+                let (window, totals, absorbs) = &mut windows[*index];
+                if row < window.end {
+                    return true;
+                }
+                if let Some(absorbs) = absorbs.take() {
+                    finalize(totals, absorbs);
+                }
+                false
+            });
             while next < encounters.len() && encounters[next].start <= row {
                 current.push(next);
                 next += 1;
@@ -151,7 +171,9 @@ pub fn aggregate(report: &mut Report, encounters: &[Encounter]) -> io::Result<Su
                 for index in &current {
                     let (window, totals, absorbs) = &mut windows[*index];
                     add_event(totals, &roster, &units, &event);
-                    absorbs.observe(row - window.start, &event, &classes);
+                    if let Some(absorbs) = absorbs {
+                        absorbs.observe(row - window.start, &event, &classes);
+                    }
                 }
             }
         })?;
@@ -169,14 +191,8 @@ pub fn aggregate(report: &mut Report, encounters: &[Encounter]) -> io::Result<Su
     let mut report_totals = Totals::default();
     let mut rows = Vec::new();
     for (window, mut window_players, absorbs) in windows {
-        for (source, value) in absorbs.finish(&classes, year) {
-            let source = units
-                .get(&source)
-                .and_then(|unit| unit.master_guid.as_deref())
-                .unwrap_or(&source);
-            if roster.contains_key(source) {
-                window_players.entry(source.into()).or_default().healing += value;
-            }
+        if let Some(absorbs) = absorbs {
+            finalize(&mut window_players, absorbs);
         }
         let mut result = BTreeMap::new();
         let mut totals = Totals::default();
@@ -284,4 +300,85 @@ pub fn player_spells(
         })?;
     }
     Ok(spells)
+}
+
+pub fn dps(
+    report: &mut Report,
+    encounters: &[Encounter],
+    player: Option<&str>,
+    interval: u64,
+) -> io::Result<BTreeMap<String, f64>> {
+    use crate::combat::Stamp;
+    let roster = report.metadata.players.clone();
+    let units = report.metadata.units.clone();
+    let selected = player
+        .filter(|name| !name.is_empty())
+        .and_then(|name| {
+            roster
+                .iter()
+                .find(|(guid, player)| name == *guid || name == *player)
+        })
+        .map(|(guid, _)| guid);
+    let year = report.id[..2].parse::<u32>().unwrap_or(0) + 2000;
+    let mut points = BTreeMap::<u64, i64>::new();
+    let mut total_duration = 0u64;
+    for encounter in encounters {
+        let mut origin = None::<Stamp>;
+        report.visit(Some(encounter.start..encounter.end), |_, line| {
+            let Some(event) = Event::parse(line) else {
+                return;
+            };
+            let start = *origin.get_or_insert(event.stamp);
+            if !matches!(
+                event.kind,
+                "SWING_DAMAGE"
+                    | "RANGE_DAMAGE"
+                    | "SPELL_DAMAGE"
+                    | "SPELL_PERIODIC_DAMAGE"
+                    | "DAMAGE_SHIELD"
+            ) {
+                return;
+            }
+            let owner = |guid| {
+                units
+                    .get(guid)
+                    .and_then(|unit| unit.master_guid.as_deref())
+                    .unwrap_or(guid)
+            };
+            let attacker = owner(event.source);
+            if !(selected.is_none_or(|guid| guid == attacker) && roster.contains_key(attacker))
+                || roster.contains_key(owner(event.target))
+            {
+                return;
+            }
+            let offset = event.stamp.relative_to(start, year).max(0) as u64;
+            *points.entry((total_duration + offset) / 1000).or_default() += event.amount;
+        })?;
+        total_duration += (encounter.duration_seconds * 10.0).round() as u64 * 100 + 100;
+    }
+    let Some((&last, _)) = points.last_key_value() else {
+        return Ok(BTreeMap::new());
+    };
+    let format = |seconds: u64| format!("{:02}:{:02}", seconds / 60, seconds % 60);
+    let mut output = BTreeMap::new();
+    let mut current = 0;
+    if interval > 0 {
+        output.insert(format(0), 0.0);
+    }
+    for second in 0..=last {
+        current += points.get(&second).copied().unwrap_or(0);
+        if interval == 0 {
+            output.insert(
+                format(second),
+                round(current as f64 / (second + 1) as f64, 10.0),
+            );
+        } else if (second + 1).is_multiple_of(interval) {
+            output.insert(
+                format(second + 1),
+                round(current as f64 / interval as f64, 10.0),
+            );
+            current = 0;
+        }
+    }
+    Ok(output)
 }

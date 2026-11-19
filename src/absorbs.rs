@@ -10,6 +10,7 @@ const ANTI_MAGIC_SHELL: &str = "48707";
 #[derive(Deserialize)]
 pub struct Rules {
     pub class_book: HashMap<String, String>,
+    pub consumables: BTreeSet<String>,
     spec_book: HashMap<String, HashMap<String, u8>>,
     absorb_spells: HashMap<String, Limit>,
     abs_order: Vec<String>,

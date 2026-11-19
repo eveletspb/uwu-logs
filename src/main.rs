@@ -76,6 +76,7 @@ struct LibraryRow {
     time: String,
     datetime: String,
     year: u32,
+    day: u32,
     players: usize,
     raid_label: String,
     fights: String,
@@ -87,6 +88,10 @@ fn library_row(report: Report) -> LibraryRow {
     let fields = report.id.splitn(4, "--").collect::<Vec<_>>();
     let year = report.id[..2].parse::<u32>().unwrap_or(0) + 2000;
     let date = format!("{year}{}", fields[0].get(2..).unwrap_or(""));
+    let day = date
+        .get(8..10)
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
     let time = fields[1].get(..5).unwrap_or(fields[1]).replace('-', ":");
     let fights = report
         .metadata
@@ -116,7 +121,7 @@ fn library_row(report: Report) -> LibraryRow {
             .join(" / ")
     };
     let progress = if raids.len() == 1 {
-        format!("≥{}/{}", kills.len(), raids[0].bosses.len())
+        format!("≥{}/{}", kills.len(), raids[0].total)
     } else {
         "—".to_owned()
     };
@@ -127,6 +132,7 @@ fn library_row(report: Report) -> LibraryRow {
         time: time.clone(),
         datetime: format!("{date}T{time}"),
         year,
+        day,
         id: report.id.clone(),
         players: report.metadata.players.len(),
         raid_label,
@@ -139,6 +145,8 @@ fn library_row(report: Report) -> LibraryRow {
 #[derive(Default, Deserialize)]
 struct LibraryQuery {
     server: Option<String>,
+    year: Option<u32>,
+    month: Option<u32>,
 }
 
 async fn library(
@@ -149,15 +157,19 @@ async fn library(
     let path = uri.path().to_owned();
     blocking(move || {
         let mut rows = Vec::new();
+        let mut realms = std::collections::BTreeSet::new();
         for id in list_ids(&app.root)?
             .into_iter()
             .filter(|id| !app.legacy_groups.is_fragment(id))
             .take(100)
         {
+            if let Some((_, realm)) = id.rsplit_once("--") {
+                realms.insert(realm.to_owned());
+            }
             if query
                 .server
                 .as_ref()
-                .is_some_and(|server| !id.ends_with(&format!("--{server}")))
+                .is_some_and(|server| !server.is_empty() && !id.ends_with(&format!("--{server}")))
             {
                 continue;
             }
@@ -165,6 +177,9 @@ async fn library(
                 Ok(report) => rows.push(library_row(report)),
                 Err(error) => eprintln!("Cannot open {id}: {error}"),
             }
+        }
+        if path != "/" {
+            return render_calendar(&app, &path, &query, rows, realms);
         }
         app.render(
             "home.html",
@@ -174,15 +189,97 @@ async fn library(
     .await
 }
 
+fn render_calendar(
+    app: &App,
+    path: &str,
+    query: &LibraryQuery,
+    reports: Vec<LibraryRow>,
+    realms: std::collections::BTreeSet<String>,
+) -> Result<Html<String>, Error> {
+    use uwu_logs::combat::days_in_month;
+    let (default_year, default_month) = reports
+        .first()
+        .map(|report| {
+            (
+                report.year,
+                report
+                    .date
+                    .get(5..7)
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .unwrap_or(1)
+                    - 1,
+            )
+        })
+        .unwrap_or((2026, 0));
+    let year = query
+        .year
+        .filter(|year| (2000..=2100).contains(year))
+        .unwrap_or(default_year);
+    let month = query
+        .month
+        .filter(|month| *month < 12)
+        .unwrap_or(default_month);
+    const MONTH_NAMES: [&str; 12] = [
+        "Январь",
+        "Февраль",
+        "Март",
+        "Апрель",
+        "Май",
+        "Июнь",
+        "Июль",
+        "Август",
+        "Сентябрь",
+        "Октябрь",
+        "Ноябрь",
+        "Декабрь",
+    ];
+    let selected = format!("{year}-{:02}-", month + 1);
+    let reports = reports
+        .into_iter()
+        .filter(|report| report.date.starts_with(&selected))
+        .collect::<Vec<_>>();
+    let days = (2000..year)
+        .flat_map(|year| (1..=12).map(move |month| days_in_month(year, month)))
+        .sum::<u32>()
+        + (1..month + 1)
+            .map(|month| days_in_month(year, month))
+            .sum::<u32>();
+    let start = (days + 5) % 7;
+    let days = days_in_month(year, month + 1);
+    let size = (start + days).div_ceil(7) * 7;
+    let days = (0..size)
+        .map(|position| {
+            (start..start + days)
+                .contains(&position)
+                .then(|| position + 1 - start)
+        })
+        .collect::<Vec<_>>();
+    let server = query.server.as_deref().unwrap_or_default();
+    let link = |year, month| {
+        format!(
+            "{path}?year={year}&month={month}&server={}",
+            path_segment(server)
+        )
+    };
+    app.render("rust_calendar.html", context! {
+        request => context! { path }, path, year, month, month_name => MONTH_NAMES[month as usize], reports, realms, server,
+        weeks => days.chunks(7).collect::<Vec<_>>(),
+        previous => link(if month == 0 { year-1 } else { year }, (month+11)%12),
+        next => link(if month == 11 { year+1 } else { year }, (month+1)%12),
+    })
+}
+
 #[derive(Default, Deserialize)]
 struct ReportQuery {
     boss: Option<String>,
     mode: Option<String>,
-    attempt: Option<usize>,
+    attempt: Option<String>,
 }
 
 fn select(encounters: &[Encounter], query: &ReportQuery) -> Vec<Encounter> {
-    encounters
+    let attempt = query.attempt.as_deref().unwrap_or_default();
+    let number = attempt.parse::<usize>().ok();
+    let mut selected = encounters
         .iter()
         .filter(|encounter| {
             query
@@ -192,13 +289,16 @@ fn select(encounters: &[Encounter], query: &ReportQuery) -> Vec<Encounter> {
                 && query
                     .mode
                     .as_ref()
-                    .is_none_or(|mode| *mode == encounter.difficulty)
-                && query
-                    .attempt
-                    .is_none_or(|attempt| attempt == encounter.attempt)
+                    .is_none_or(|mode| mode.is_empty() || *mode == encounter.difficulty)
+                && number.is_none_or(|attempt| attempt == encounter.attempt)
+                && (attempt != "kill" || encounter.outcome == "kill")
         })
         .cloned()
-        .collect()
+        .collect::<Vec<_>>();
+    if attempt == "kill" {
+        return selected.pop().into_iter().collect();
+    }
+    selected
 }
 
 async fn report_page(
@@ -220,7 +320,7 @@ async fn report_page(
         }).collect::<Vec<_>>();
         app.render("rust_report.html", context! {
             request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id,
-            encounters => encounter_links, players, duration => summary.duration_seconds, query => uri.query(),
+            encounters => encounter_links, players, duration => summary.duration_seconds, query => uri.query().map(|query| format!("?{query}")).unwrap_or_default(),
         })
     }).await
 }
@@ -240,13 +340,214 @@ async fn spell_page(
     let path = uri.path().to_owned();
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        if view == "casts" {
+            let encounters = report.metadata.encounters.iter().map(|encounter| context! {
+                boss => &encounter.boss, outcome => &encounter.outcome, difficulty => &encounter.difficulty,
+                duration => encounter.duration_seconds, query => encounter.query()
+            }).collect::<Vec<_>>();
+            return app.render("timeline.html", context! {
+                request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id,
+                SOURCE_NAME => &player, QUERY => uri.query().map(|query| format!("?{query}")).unwrap_or_default(),
+                RUST_TIMELINE => true, encounters,
+            });
+        }
+
         let windows = select(&report.metadata.encounters, &query).into_iter().map(|encounter| encounter.start..encounter.end).collect::<Vec<_>>();
         let mut spells = player_spells(&mut report, &windows, &player)?.into_iter().collect::<Vec<_>>();
         spells.sort_by_key(|(_, spell)| std::cmp::Reverse(match view.as_str() {
             "heal" => spell.healing, "taken" => spell.taken, "casts" => spell.casts as i64, _ => spell.damage,
         }));
-        app.render("rust_player.html", context! { request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id, player, spells })
+        app.render("rust_player.html", context! { request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id, player, spells,
+            query => uri.query().map(|query| format!("?{query}")).unwrap_or_default() })
     }).await
+}
+
+#[derive(Deserialize)]
+struct TimelineQuery {
+    boss: String,
+    attempt: usize,
+    name: String,
+}
+
+async fn casts(
+    State(app): State<App>,
+    UrlPath(id): UrlPath<String>,
+    Json(query): Json<TimelineQuery>,
+) -> Result<Json<uwu_logs::timeline::Timeline>, Error> {
+    blocking(move || {
+        let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        let encounter = report
+            .metadata
+            .encounters
+            .iter()
+            .find(|encounter| {
+                encounter.boss_slug == query.boss && encounter.attempt == query.attempt
+            })
+            .ok_or(Error(StatusCode::BAD_REQUEST, "Unknown encounter"))?
+            .clone();
+        Ok(Json(uwu_logs::timeline::build(
+            &mut report,
+            &encounter,
+            &query.name,
+        )?))
+    })
+    .await
+}
+
+async fn players_classes(
+    State(app): State<App>,
+    UrlPath(id): UrlPath<String>,
+) -> Result<Json<std::collections::BTreeMap<String, String>>, Error> {
+    blocking(move || {
+        let report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        Ok(Json(
+            report
+                .metadata
+                .players
+                .into_iter()
+                .map(|(guid, name)| {
+                    let class = report
+                        .metadata
+                        .classes
+                        .get(&guid)
+                        .cloned()
+                        .unwrap_or_else(|| "unknown".into());
+                    (name, class)
+                })
+                .collect(),
+        ))
+    })
+    .await
+}
+
+async fn report_section(
+    State(app): State<App>,
+    UrlPath((id, section)): UrlPath<(String, String)>,
+    OriginalUri(uri): OriginalUri,
+    Query(query): Query<ReportQuery>,
+) -> Result<Html<String>, Error> {
+    render_section(app, id, section, None, uri, query).await
+}
+
+async fn spell_section(
+    State(app): State<App>,
+    UrlPath((id, spell)): UrlPath<(String, String)>,
+    OriginalUri(uri): OriginalUri,
+    Query(query): Query<ReportQuery>,
+) -> Result<Html<String>, Error> {
+    render_section(app, id, "spell".into(), Some(spell), uri, query).await
+}
+
+async fn render_section(
+    app: App,
+    id: String,
+    section: String,
+    spell: Option<String>,
+    uri: axum::http::Uri,
+    query: ReportQuery,
+) -> Result<Html<String>, Error> {
+    let path = uri.path().to_owned();
+    blocking(move || {
+        use uwu_logs::analysis::{self, View};
+        let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        let selected = select(&report.metadata.encounters, &query);
+        let query = uri
+            .query()
+            .map(|query| format!("?{query}"))
+            .unwrap_or_default();
+        let view =
+            match section.as_str() {
+                "deaths" => return app.render(
+                    "rust_deaths.html",
+                    context! {
+                        request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id, query,
+                        deaths => analysis::deaths(&mut report, &selected)?
+                    },
+                ),
+                "damage" => View::Targets,
+                "all_auras" => View::Auras,
+                "consumables" => View::Consumables,
+                "powers" => View::Resources,
+                "entities" => View::Units,
+                "spell" => View::Spell(spell.as_deref().unwrap_or_default()),
+                _ => return Err(Error(StatusCode::NOT_FOUND, "Unknown report section")),
+            };
+        let (heading, label, metric) = view.labels();
+        app.render(
+            "rust_section.html",
+            context! {
+                request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id, query,
+                heading, label, metric, rows => analysis::inspect(&mut report, &selected, view)?
+            },
+        )
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct SlicesQuery {
+    boss: String,
+}
+
+async fn report_slices(
+    State(app): State<App>,
+    UrlPath(id): UrlPath<String>,
+    Json(query): Json<SlicesQuery>,
+) -> Result<Json<Vec<String>>, Error> {
+    blocking(move || {
+        let report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        let values = report
+            .metadata
+            .encounters
+            .iter()
+            .filter(|encounter| encounter.boss_slug == query.boss)
+            .map(|encounter| {
+                let seconds = encounter.duration_seconds;
+                let state = if encounter.outcome == "kill" {
+                    "Kill".into()
+                } else {
+                    format!("Wipe {}", encounter.attempt + 1)
+                };
+                format!(
+                    "{:02}:{:06.3} | {state}",
+                    seconds as u64 / 60,
+                    seconds % 60.
+                )
+            })
+            .collect();
+        Ok(Json(values))
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct DpsQuery {
+    #[serde(flatten)]
+    selection: ReportQuery,
+    player_name: Option<String>,
+    sec: Option<serde_json::Value>,
+}
+
+async fn dps(
+    State(app): State<App>,
+    UrlPath(id): UrlPath<String>,
+    Json(query): Json<DpsQuery>,
+) -> Result<Json<std::collections::BTreeMap<String, f64>>, Error> {
+    blocking(move || {
+        let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        let selected = select(&report.metadata.encounters, &query.selection);
+        let interval = query
+            .sec
+            .and_then(|value| value.as_u64().or_else(|| value.as_str()?.parse().ok()))
+            .unwrap_or(0);
+        Ok(Json(uwu_logs::metrics::dps(
+            &mut report,
+            &selected,
+            query.player_name.as_deref(),
+            interval,
+        )?))
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -358,6 +659,7 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let mut templates = Environment::new();
     templates.set_loader(path_loader(assets.join("templates")));
     templates.add_filter("urlencode", path_segment);
+    templates.add_global("RUST_VIEW", minijinja::Value::from(true));
     let app = App {
         legacy_groups: Arc::new(LegacyGroups::load(&root)?),
         root: Arc::new(root),
@@ -379,7 +681,19 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             }),
         )
         .route("/reports/{id}/{view}/{player}/", get(spell_page))
+        .route("/reports/{id}/{section}/", get(report_section))
+        .route("/reports/{id}/spell/{spell}/", get(spell_section))
         .route("/reports/{id}/download", get(download))
+        .route(
+            "/reports/{id}/report_slices/",
+            axum::routing::post(report_slices),
+        )
+        .route("/reports/{id}/get_dps", axum::routing::post(dps))
+        .route("/reports/{id}/casts/", axum::routing::post(casts))
+        .route(
+            "/reports/{id}/players_classes/",
+            axum::routing::post(players_classes),
+        )
         .nest_service("/static", ServeDir::new(assets.join(Path::new("static"))))
         .with_state(app);
     let address = env::var("UWU_BIND").unwrap_or_else(|_| "127.0.0.1:5000".into());

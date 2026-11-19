@@ -3,7 +3,7 @@ use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
 use std::ops::Range;
 
 const MAGIC: &[u8; 8] = b"UWURPT01";
-const BLOCK_BYTES: usize = 256 * 1024;
+const BLOCK_BYTES: usize = 1024 * 1024;
 const MAX_EVENT_BYTES: usize = 1024 * 1024;
 const MAX_INDEX_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -41,11 +41,14 @@ pub struct ReportWriter<W> {
     offset: u64,
     buffer: Vec<u8>,
     events_in_block: u32,
+    compressor: zstd::bulk::Compressor<'static>,
 }
 
 impl<W: Write> ReportWriter<W> {
     pub fn new(mut output: W) -> io::Result<Self> {
         output.write_all(MAGIC)?;
+        let mut compressor = zstd::bulk::Compressor::new(3)?;
+        compressor.set_parameter(zstd::zstd_safe::CParameter::ChecksumFlag(true))?;
         Ok(Self {
             output,
             index: Index {
@@ -56,6 +59,7 @@ impl<W: Write> ReportWriter<W> {
             offset: MAGIC.len() as u64,
             buffer: Vec::with_capacity(BLOCK_BYTES),
             events_in_block: 0,
+            compressor,
         })
     }
 
@@ -75,7 +79,7 @@ impl<W: Write> ReportWriter<W> {
         if self.events_in_block == 0 {
             return Ok(());
         }
-        let compressed = zstd::bulk::compress(&self.buffer, 3)?;
+        let compressed = self.compressor.compress(&self.buffer)?;
         self.output.write_all(&compressed)?;
         self.index.blocks.push(Block {
             offset: self.offset,
@@ -181,14 +185,16 @@ impl<R: Read + Seek> ReportFile<R> {
             .index
             .blocks
             .partition_point(|block| block.first_event + u64::from(block.events) <= range.start);
+        let mut decompressor = zstd::bulk::Decompressor::new()?;
+        let mut compressed = Vec::new();
         for block in &self.index.blocks[first..] {
             if block.first_event >= range.end {
                 break;
             }
             self.input.seek(SeekFrom::Start(block.offset))?;
-            let mut compressed = vec![0; block.stored_bytes as usize];
+            compressed.resize(block.stored_bytes as usize, 0);
             self.input.read_exact(&mut compressed)?;
-            let raw = zstd::bulk::decompress(&compressed, block.raw_bytes as usize)?;
+            let raw = decompressor.decompress(&compressed, block.raw_bytes as usize)?;
             let block_end = block.first_event + u64::from(block.events);
             if raw.len() != block.raw_bytes as usize
                 || raw.split_inclusive(|byte| *byte == b'\n').count() != block.events as usize

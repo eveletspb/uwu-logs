@@ -1,0 +1,17 @@
+{% extends "layout.html" %}
+{% block the_main %}
+<main>
+  <h1>{{ heading }}</h1>
+  {% include "rust_report_nav.html" %}
+  <section class="table-wrap">
+    <table class="recent-table">
+      <thead><tr><th>{{ label }}</th><th>Детали</th><th>{{ metric }}</th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+      <tr><td>{{ row.unit }}</td><td>{{ row.detail }}</td><td>{{ row.value }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</main>
+{% endblock %}

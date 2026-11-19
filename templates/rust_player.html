@@ -2,6 +2,13 @@
 {% block the_main %}
 <main>
   <h1>{{ player }}</h1>
+  {% include "rust_report_nav.html" %}
+  <div class="tl-player-nav" aria-label="Анализ игрока">
+    <a href="/reports/{{ REPORT_ID }}/player/{{ player | urlencode }}/{{ query }}">Урон</a>
+    <a href="/reports/{{ REPORT_ID }}/heal/{{ player | urlencode }}/{{ query }}">Лечение</a>
+    <a href="/reports/{{ REPORT_ID }}/taken/{{ player | urlencode }}/{{ query }}">Полученный урон</a>
+    <a href="/reports/{{ REPORT_ID }}/casts/{{ player | urlencode }}/{{ query }}">Таймлайн</a>
+  </div>
   <section class="table-wrap">
     <table class="recent-table">
       <thead><tr><th>Способность</th><th>Урон</th><th>Лечение</th><th>Получено урона</th><th>Применения</th></tr></thead>

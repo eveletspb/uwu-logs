@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+{% block the_main %}
+<main>
+  <h1>Смерти</h1>
+  {% include "rust_report_nav.html" %}
+  {% for death in deaths %}
+  <section class="table-wrap">
+    <h2>{{ death.player }} · {{ death.boss }} · {{ death.seconds }} с</h2>
+    <table class="recent-table">
+      <thead><tr><th>До смерти, мс</th><th>Источник</th><th>Способность</th><th>Урон</th></tr></thead>
+      <tbody>
+      {% for hit in death.hits %}
+      <tr><td>{{ hit.offset_millis }}</td><td>{{ hit.source }}</td><td>{{ hit.spell }}</td><td>{{ hit.amount }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% else %}
+  <p>В выбранных боях нет зарегистрированных смертей.</p>
+  {% endfor %}
+</main>
+{% endblock %}

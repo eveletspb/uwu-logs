@@ -3,11 +3,11 @@
   <a class="button-primary" href="/upload">Импортировать лог</a>
 </header>
 <section class="summary-grid" aria-label="Сводка библиотеки">
-  <div class="summary-tile"><div class="summary-label">Сохранённые отчёты</div><div class="summary-value">{{ LOCAL_REPORTS|length }}</div><div class="summary-detail">За последние 30 дней</div></div>
+  <div class="summary-tile"><div class="summary-label">Сохранённые отчёты</div><div class="summary-value">{{ LOCAL_REPORTS|length }}</div>{% if not RUST_VIEW %}<div class="summary-detail">За последние 30 дней</div>{% endif %}</div>
   <div class="summary-tile"><div class="summary-label">Запись боёв</div><div class="summary-value">Только боссы</div><div class="summary-detail">DBM · убийства и вайпы</div></div>
-  <div class="summary-tile"><div class="summary-label">Хранение</div><div class="summary-value">30 дней</div><div class="summary-detail">Автоматическая очистка</div></div>
+  {% if not RUST_VIEW %}<div class="summary-tile"><div class="summary-label">Хранение</div><div class="summary-value">30 дней</div><div class="summary-detail">Автоматическая очистка</div></div>{% endif %}
 </section>
-<h2 class="section-heading">Последние рейды <small>Автоимпорт после закрытия WoW</small></h2>
+<h2 class="section-heading">Последние рейды {% if not RUST_VIEW %}<small>Автоимпорт после закрытия WoW</small>{% endif %}</h2>
 {% if LOCAL_REPORTS %}
 <section class="table-wrap" aria-label="Последние отчёты">
 <table class="recent-table"><thead><tr><th>Рейд</th><th>Сервер</th><th>Начало</th><th>Прогресс</th><th>Игроки</th><th></th></tr></thead><tbody>
@@ -16,5 +16,5 @@
 {% endfor %}
 </tbody></table></section>
 {% else %}
-<section class="empty-panel"><h2>Первый отчёт появится после рейда</h2><p>RaidAutoLog запишет бои с боссами. Закрой WoW — журнал импортируется автоматически.</p></section>
+<section class="empty-panel"><h2>Первый отчёт появится после рейда</h2>{% if not RUST_VIEW %}<p>RaidAutoLog запишет бои с боссами. Закрой WoW — журнал импортируется автоматически.</p>{% endif %}</section>
 {% endif %}

@@ -2,6 +2,7 @@
 {% block the_main %}
 <main id="report-main">
   <h1>{{ REPORT_NAME }}</h1>
+  {% include "rust_report_nav.html" %}
   <div><a href="?boss=all">Все бои</a> · <a href="download?format=txt">Скачать лог</a> · <a href="download?format=json">Скачать JSON</a></div>
   <section class="table-wrap">
     <table class="recent-table">
@@ -19,7 +20,7 @@
       <thead><tr><th>Игрок</th><th>Урон</th><th>DPS</th><th>Лечение</th><th>HPS</th><th>Получено урона</th><th>Смерти</th></tr></thead>
       <tbody>
       {% for player in players %}
-      <tr><td><a href="player/{{ player.name | urlencode }}/{{ '?' ~ query if query else '' }}">{{ player.name }}</a></td><td>{{ player.damage }}</td><td>{{ player.dps }}</td><td>{{ player.healing }}</td><td>{{ player.hps }}</td><td>{{ player.damage_taken }}</td><td>{{ player.deaths }}</td></tr>
+      <tr><td><a href="player/{{ player.name | urlencode }}/{{ query }}">{{ player.name }}</a></td><td>{{ player.damage }}</td><td>{{ player.dps }}</td><td>{{ player.healing }}</td><td>{{ player.hps }}</td><td>{{ player.damage_taken }}</td><td>{{ player.deaths }}</td></tr>
       {% endfor %}
       </tbody>
     </table>

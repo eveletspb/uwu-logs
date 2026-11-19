@@ -58,6 +58,28 @@ This fork adds a responsive dark UI, a recent-raid library, report summaries,
 readable damage/healing tables, and visible report navigation. The existing
 parser and encounter calculations remain in place.
 
+### Rust server
+
+The Rust server runs independently of the Python viewer. Build with
+`cargo build --locked --release --jobs 8` and launch from the repository
+directory with `target/release/uwu-logs`. It listens on `127.0.0.1:5000`
+by default. Set `UWU_ROOT` to the data directory and `UWU_BIND` to change
+the listener. On hosts where the 7-Zip executable is named `7z`, set
+`UWU_7Z=7z` for archive imports.
+
+One successful upload produces one `LogsDir/<report-id>.uwu` file. The
+file contains independently compressed Zstandard blocks and a versioned
+index with the byte offset and first event of each block. The server uses
+the index to read encounter ranges and streams complete text downloads.
+It publishes a new report after writing the complete file on the reports
+filesystem.
+
+The server also opens existing `LogsDir/<report-id>/LOGS_CUT.zstd` reports
+and their metadata in place. Keep `uploads/0file_info` and
+`_report_aliases.json` alongside the report directory when copying a
+legacy installation. The archive metadata identifies older report
+fragments that belong together.
+
 ### Local Windows installation
 
 Place this repository in a subfolder of your WoW 3.3.5a installation.

@@ -43,6 +43,39 @@ pub struct Metadata {
     pub players: BTreeMap<String, String>,
     pub units: BTreeMap<String, Unit>,
     pub classes: BTreeMap<String, String>,
+    #[serde(default)]
+    pub time_index: Vec<(u64, u64)>,
+}
+
+impl Metadata {
+    fn observe_units(&mut self, event: &Event<'_>) {
+        for (guid, name) in [
+            (event.source, event.source_name),
+            (event.target, event.target_name),
+        ] {
+            if player_guid(guid) && !self.players.contains_key(guid) {
+                self.players.insert(guid.into(), name.into());
+            }
+            if !self.units.contains_key(guid) {
+                self.units.insert(
+                    guid.into(),
+                    Unit {
+                        name: name.into(),
+                        master_guid: None,
+                    },
+                );
+            }
+        }
+        if player_guid(event.source)
+            && !self.classes.contains_key(event.source)
+            && let Some(class) = crate::absorbs::RULES.class_book.get(event.spell)
+        {
+            self.classes.insert(event.source.into(), class.clone());
+        }
+        if event.kind == "SPELL_SUMMON" && player_guid(event.source) {
+            self.units.get_mut(event.target).unwrap().master_guid = Some(event.source.into());
+        }
+    }
 }
 
 pub struct Report {
@@ -86,15 +119,15 @@ impl Report {
                     clock: None,
                     legacy_rows: 0,
                     metadata: Metadata {
-                        players: read_json(&legacy.join("PLAYERS_DATA.json"))?,
-                        units: read_json(&legacy.join("GUIDS_DATA.json"))?,
-                        classes: read_json(&legacy.join("CLASSES_DATA.json"))?,
+                        players: read_cache(&legacy.join("PLAYERS_DATA.json"))?,
+                        units: read_cache(&legacy.join("GUIDS_DATA.json"))?,
+                        classes: read_cache(&legacy.join("CLASSES_DATA.json"))?,
                         ..Metadata::default()
                     },
                 };
                 let stored_encounters: BTreeMap<String, Vec<[u64; 2]>> =
-                    read_json(&legacy.join("ENCOUNTER_DATA.json"))?;
-                let timestamps: Vec<u64> = read_json(&legacy.join("TIMESTAMP_DATA.json"))?;
+                    read_cache(&legacy.join("ENCOUNTER_DATA.json"))?;
+                let timestamps: Vec<u64> = read_cache(&legacy.join("TIMESTAMP_DATA.json"))?;
                 report.load_legacy_encounters(stored_encounters, &timestamps)?;
                 Ok(report)
             }
@@ -103,8 +136,9 @@ impl Report {
     }
 
     pub fn open_group(root: &Path, id: &str, groups: &LegacyGroups) -> io::Result<Self> {
+        let id = groups.aliases.get(id).map_or(id, String::as_str);
         let mut report = Self::open(root, id)?;
-        let Some(parts) = groups.0.get(id) else {
+        let Some(parts) = groups.parts.get(id) else {
             return Ok(report);
         };
         let Source::Legacy(paths) = &mut report.source else {
@@ -138,6 +172,12 @@ impl Report {
                         start.relative_to(first, year).max(0) as u64 / 1000
                     })
                     .unwrap_or(0);
+                report.metadata.time_index.extend(
+                    part.metadata
+                        .time_index
+                        .into_iter()
+                        .map(|(second, line)| (second + elapsed, line + report.legacy_rows)),
+                );
                 for mut segment in part.metadata.encounters {
                     segment.start += report.legacy_rows;
                     segment.end += report.legacy_rows;
@@ -252,6 +292,9 @@ impl Report {
         let mut first = None;
         let mut last = None;
         let mut rows = 0;
+        let mut rebuilt = Metadata::default();
+        let mut pulls = windows.is_empty().then(crate::encounters::Pulls::default);
+        let recover_units = self.metadata.units.is_empty() || self.metadata.players.is_empty();
         self.visit(None, |index, line| {
             rows = index + 1;
             active.retain(|entry: &usize| windows[*entry].end > index);
@@ -266,10 +309,47 @@ impl Report {
                 for entry in &active {
                     windows[*entry].observe(index, time, &event);
                 }
+                if let Some(pulls) = &mut pulls {
+                    pulls.observe(index, time, &event);
+                }
+                if recover_units {
+                    rebuilt.observe_units(&event);
+                }
+                let second = time / 1000;
+                if timestamps.is_empty()
+                    && rebuilt
+                        .time_index
+                        .last()
+                        .is_none_or(|(last, _)| second >= last + 5)
+                {
+                    rebuilt.time_index.push((second, index));
+                }
             }
         })?;
         self.clock = first.zip(last);
         self.legacy_rows = rows;
+        if recover_units {
+            rebuilt.players.append(&mut self.metadata.players);
+            rebuilt.classes.append(&mut self.metadata.classes);
+            rebuilt.units.append(&mut self.metadata.units);
+            self.metadata.players = rebuilt.players;
+            self.metadata.classes = rebuilt.classes;
+            self.metadata.units = rebuilt.units;
+        }
+        self.metadata.time_index = timestamps
+            .iter()
+            .copied()
+            .enumerate()
+            .step_by(5)
+            .map(|(second, line)| (second as u64, line))
+            .collect();
+        if timestamps.is_empty() {
+            self.metadata.time_index = rebuilt.time_index;
+        }
+        if let Some(pulls) = pulls {
+            self.metadata.encounters = pulls.finish();
+            return Ok(());
+        }
         self.metadata.encounters = windows
             .into_iter()
             .filter_map(|window| {
@@ -386,6 +466,18 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> io::Result<T> {
     serde_json::from_reader(BufReader::new(File::open(path)?)).map_err(io::Error::other)
 }
 
+fn read_cache<T: DeserializeOwned + Default>(path: &Path) -> io::Result<T> {
+    match File::open(path) {
+        Ok(file) => match serde_json::from_reader(BufReader::new(file)) {
+            Ok(value) => Ok(value),
+            Err(error) if !error.is_io() => Ok(T::default()),
+            Err(error) => Err(io::Error::from(error)),
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(T::default()),
+        Err(error) => Err(error),
+    }
+}
+
 pub fn import_log(root: &Path, input: impl BufRead, year: u32, realm: &str) -> io::Result<String> {
     import_logs(root, [Ok(input)], year, realm)
 }
@@ -422,8 +514,7 @@ pub fn import_logs(
         let mut author = None;
         let mut event_index = 0;
         let mut metadata = Metadata::default();
-        let mut attempts = BTreeMap::new();
-        let mut windows: BTreeMap<String, Window> = BTreeMap::new();
+        let mut pulls = crate::encounters::Pulls::default();
         for input in inputs {
             let mut input = input?;
             while read_event(&mut input, &mut raw)? > 0 {
@@ -444,63 +535,23 @@ pub fn import_logs(
                 };
                 let origin = *first.get_or_insert(event.stamp);
                 let time = event.stamp.relative_to(origin, year).max(0) as u64;
-                for (guid, name) in [
-                    (event.source, event.source_name),
-                    (event.target, event.target_name),
-                ] {
-                    if player_guid(guid) && !metadata.players.contains_key(guid) {
-                        metadata.players.insert(guid.into(), name.into());
-                    }
-                    if !metadata.units.contains_key(guid) {
-                        metadata.units.insert(
-                            guid.into(),
-                            Unit {
-                                name: name.into(),
-                                master_guid: None,
-                            },
-                        );
-                    }
-                }
-                if player_guid(event.source)
-                    && !metadata.classes.contains_key(event.source)
-                    && let Some(class) = crate::absorbs::RULES.class_book.get(event.spell)
+                let second = time / 1000;
+                if metadata
+                    .time_index
+                    .last()
+                    .is_none_or(|(last, _)| second >= last + 5)
                 {
-                    metadata.classes.insert(event.source.into(), class.clone());
+                    metadata.time_index.push((second, event_index));
                 }
-                if event.kind == "SPELL_SUMMON" && player_guid(event.source) {
-                    metadata.units.get_mut(event.target).unwrap().master_guid =
-                        Some(event.source.into());
-                }
-                let boss = guid_boss(event.source).or_else(|| guid_boss(event.target));
-                if let Some(boss) = boss
-                    && (event.damage() || event.killing_blow())
-                {
-                    if let Some(window) = windows.get(boss)
-                        && time.saturating_sub(window.last) > 30_000
-                        && let Some(encounter) = windows.remove(boss).and_then(Window::finish)
-                    {
-                        metadata.encounters.push(encounter);
-                    }
-                    let window = windows.entry(boss.into()).or_insert_with(|| {
-                        let attempt = attempts.entry(boss.to_owned()).or_insert(0);
-                        let window =
-                            Window::new(boss.into(), *attempt, event_index, event_index + 1);
-                        *attempt += 1;
-                        window
-                    });
-                    window.end = event_index + 1;
-                    window.observe(event_index, time, &event);
-                }
+                metadata.observe_units(&event);
+                pulls.observe(event_index, time, &event);
                 writer.push_event(normalized.as_bytes())?;
                 event_index += 1;
             }
         }
         let first = first
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no valid combat events"))?;
-        metadata
-            .encounters
-            .extend(windows.into_values().filter_map(Window::finish));
-        metadata.encounters.sort_by_key(|encounter| encounter.start);
+        metadata.encounters = pulls.finish();
         writer.finish(serde_json::to_value(&metadata).map_err(io::Error::other)?)?;
         file.flush()?;
         file.get_ref().sync_all()?;
@@ -589,7 +640,10 @@ mod tests {
 }
 
 #[derive(Default)]
-pub struct LegacyGroups(BTreeMap<String, Vec<String>>);
+pub struct LegacyGroups {
+    parts: BTreeMap<String, Vec<String>>,
+    aliases: BTreeMap<String, String>,
+}
 
 impl LegacyGroups {
     pub fn load(root: &Path) -> io::Result<Self> {
@@ -716,11 +770,19 @@ impl LegacyGroups {
                 groups.insert(group[0].clone(), group);
             }
         }
-        Ok(Self(groups))
+        let aliases = match read_json(&root.join("_report_aliases.json")) {
+            Ok(aliases) => aliases,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => BTreeMap::new(),
+            Err(error) => return Err(error),
+        };
+        Ok(Self {
+            parts: groups,
+            aliases,
+        })
     }
 
     pub fn is_fragment(&self, id: &str) -> bool {
-        self.0
+        self.parts
             .values()
             .any(|parts| parts.iter().skip(1).any(|part| part == id))
     }

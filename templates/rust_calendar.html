@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+{% block the_main %}
+<main>
+  <header class="page-heading">
+    <h1>Календарь рейдов</h1>
+    <div><a href="{{ previous }}">←</a> <strong>{{ month_name }} {{ year }}</strong> <a href="{{ next }}">→</a></div>
+  </header>
+  <form method="get" action="{{ path }}">
+    <input type="hidden" name="year" value="{{ year }}">
+    <input type="hidden" name="month" value="{{ month }}">
+    <label>Сервер <select name="server"><option value="">Все серверы</option>
+    {% for realm in realms %}<option value="{{ realm }}"{% if server == realm %} selected{% endif %}>{{ realm }}</option>{% endfor %}
+    </select></label>
+    <button type="submit">Показать</button>
+  </form>
+  <section class="table-wrap">
+    <table class="recent-table">
+      <thead><tr><th>Пн</th><th>Вт</th><th>Ср</th><th>Чт</th><th>Пт</th><th>Сб</th><th>Вс</th></tr></thead>
+      <tbody>
+      {% for week in weeks %}
+      <tr>
+        {% for day in week %}
+        <td>{% if day %}<strong>{{ day }}</strong>
+          {% for report in reports if report.day == day %}
+          <p><a href="/reports/{{ report.id | urlencode }}/">{{ report.time }} · {{ report.raid_label }}</a><br><small>{{ report.server }} · {{ report.author }}</small></p>
+          {% endfor %}
+        {% endif %}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</main>
+{% endblock %}

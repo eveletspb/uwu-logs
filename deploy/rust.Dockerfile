@@ -3,6 +3,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY config/encounters.json config/combat-rules.json config/
 COPY src/ src/
+COPY static/aura_icons.json static/
 RUN cargo build --release --locked --jobs 8
 
 FROM debian:trixie-slim
