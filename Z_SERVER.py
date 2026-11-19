@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from flask import (
-    Flask, request,
+    Flask, Response, request,
     make_response,
     redirect,
     render_template,
@@ -294,17 +294,25 @@ def download_logs(report_id):
             add_log_entry(ip, "SPAMDL", report_id)
             raise TooManyRequests(retry_after=_limit)
     
-    FILE_NAME = f"{report_id}.7z"
-    DIRECTORIES = [
-        Directories.archives,
-        Directories.archives.backup_path(),
-    ]
-    for _dir in DIRECTORIES:
-        file_path = _dir / FILE_NAME
-        if file_path.is_file():
-            return send_file(file_path)
+    export_format = request.args.get("format")
+    if export_format not in (None, "txt"):
+        raise BadRequest("Supported download format: txt")
 
-    return "", 404
+    report = load_report(report_id)
+    if export_format is None and not getattr(report, "parts", None):
+        for directory in (Directories.archives, Directories.archives.backup_path()):
+            archive = directory / f"{report_id}.7z"
+            if archive.is_file():
+                return send_file(archive, as_attachment=True)
+
+    try:
+        lines = report.LOGS
+    except FileNotFoundError:
+        raise NotFound() from None
+    response = Response((line + "\n" for line in lines), content_type="text/plain; charset=utf-8")
+    response.headers.set("Content-Disposition", "attachment", filename=f"{report_id}.txt")
+    return response
+
 
 @SERVER.route("/reports/<report_id>/player/<source>/")
 def player(report_id, source: str):

@@ -161,6 +161,18 @@ instance snapshot show a lower bound such as `≥2/9` with a “from log” hint
 this is not presented as the complete lockout progress. Servers that do not
 provide encounter progress retain this lower-bound display.
 
+## Download a report log
+
+Use **Скачать лог** in the report menu, or request
+`GET /reports/<report_id>/download?format=txt`. The response is a UTF-8
+attachment containing the report's full normalized combat log, including
+all fragments of a combined report. The download covers the full report
+regardless of the encounter selected in the viewer.
+
+Omit `format` to receive the existing `.7z` archive for a standalone report
+when available. Otherwise the endpoint returns the text log.
+An unknown report returns HTTP 404. An unsupported format returns HTTP 400.
+
 ## Automatic remote export
 
 Set `remote_export_url` in the private `auto-config.json` to a UwU Logs server
