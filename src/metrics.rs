@@ -248,6 +248,7 @@ pub struct Spell {
     pub name: String,
     pub damage: i64,
     pub healing: i64,
+    pub received_healing: i64,
     pub taken: i64,
     pub casts: u64,
 }
@@ -256,6 +257,7 @@ pub fn player_spells(
     report: &mut Report,
     windows: &[Range<u64>],
     name: &str,
+    received_only: bool,
 ) -> io::Result<BTreeMap<String, Spell>> {
     let Some((guid, _)) = report
         .metadata
@@ -278,13 +280,22 @@ pub fn player_spells(
                     .get(event.source)
                     .and_then(|unit| unit.master_guid.as_deref())
                     == Some(guid.as_str());
-            if event.spell.is_empty() || !(outgoing || event.target == guid && event.damage()) {
+            let relevant = if received_only {
+                event.target == guid && event.healing()
+            } else {
+                outgoing || event.target == guid && event.damage()
+            };
+            if event.spell.is_empty() || !relevant {
                 return;
             }
             let data = spells.entry(event.spell.into()).or_insert_with(|| Spell {
                 name: event.spell_name.into(),
                 ..Spell::default()
             });
+            if received_only {
+                data.received_healing += event.amount.saturating_sub(event.excess);
+                return;
+            }
             if outgoing {
                 if event.damage() {
                     data.damage += event.amount.saturating_sub(event.excess);

@@ -492,12 +492,13 @@ async fn spell_page(
         }
 
         let windows = select(&mut report, &query)?.into_iter().map(|encounter| encounter.start..encounter.end).collect::<Vec<_>>();
-        let mut spells = player_spells(&mut report, &windows, &player)?.into_iter().collect::<Vec<_>>();
+        let received_only = view == "healed";
+        let mut spells = player_spells(&mut report, &windows, &player, received_only)?.into_iter().collect::<Vec<_>>();
         spells.sort_by_key(|(_, spell)| std::cmp::Reverse(match view.as_str() {
-            "heal" => spell.healing, "taken" => spell.taken, "casts" => spell.casts as i64, _ => spell.damage,
+            "heal" => spell.healing, "healed" => spell.received_healing, "taken" => spell.taken, _ => spell.damage,
         }));
         app.render("rust_player.html", context! { request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id, player, spells,
-            query => uri.query().map(|query| format!("?{query}")).unwrap_or_default() })
+            received_only, query => uri.query().map(|query| format!("?{query}")).unwrap_or_default() })
     }).await
 }
 

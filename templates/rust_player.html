@@ -6,15 +6,18 @@
   <div class="tl-player-nav" aria-label="Анализ игрока">
     <a href="/reports/{{ REPORT_ID }}/player/{{ player | urlencode }}/{{ query }}">Урон</a>
     <a href="/reports/{{ REPORT_ID }}/heal/{{ player | urlencode }}/{{ query }}">Лечение</a>
+    <a href="/reports/{{ REPORT_ID }}/healed/{{ player | urlencode }}/{{ query }}">Полученное лечение</a>
     <a href="/reports/{{ REPORT_ID }}/taken/{{ player | urlencode }}/{{ query }}">Полученный урон</a>
     <a href="/reports/{{ REPORT_ID }}/casts/{{ player | urlencode }}/{{ query }}">Таймлайн</a>
   </div>
   <section class="table-wrap">
     <table class="recent-table">
-      <thead><tr><th>Способность</th><th>Урон</th><th>Лечение</th><th>Получено урона</th><th>Применения</th></tr></thead>
+      <thead><tr><th>Способность</th>{% if received_only %}<th>Получено лечения</th>{% else %}<th>Урон</th><th>Лечение</th><th>Получено урона</th><th>Применения</th>{% endif %}</tr></thead>
       <tbody>
       {% for id, spell in spells %}
-      <tr><td>{{ spell.name }} ({{ id }})</td><td>{{ spell.damage }}</td><td>{{ spell.healing }}</td><td>{{ spell.taken }}</td><td>{{ spell.casts }}</td></tr>
+      <tr><td>{{ spell.name }} ({{ id }})</td>{% if received_only %}<td>{{ spell.received_healing }}</td>{% else %}<td>{{ spell.damage }}</td><td>{{ spell.healing }}</td><td>{{ spell.taken }}</td><td>{{ spell.casts }}</td>{% endif %}</tr>
+      {% else %}
+      {% if received_only %}<tr><td colspan="2">За выбранный бой лечения не получено.</td></tr>{% endif %}
       {% endfor %}
       </tbody>
     </table>
