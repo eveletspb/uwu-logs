@@ -296,7 +296,7 @@ def download_logs(report_id):
     
     export_format = request.args.get("format")
     if export_format not in (None, "txt"):
-        raise BadRequest("Supported download format: txt")
+        return "Supported download format: txt", 400
 
     report = load_report(report_id)
     if export_format is None and not getattr(report, "parts", None):
