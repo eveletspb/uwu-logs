@@ -74,6 +74,10 @@ class RemoteExporter:
                 time.sleep(1)
             if result and (result.get('done') == -1 or 'Error' in str(result.get('status', ''))):
                 raise RuntimeError('Destination import failed: '+str(result.get('status')))
+            if result and result.get('done') == 1:
+                saved = [name for name, entry in result.get('slices', {}).items() if entry.get('done') == 1]
+                if saved:
+                    reports = saved
             if not reports or not all(report_exists(name) for name in reports):
                 raise RuntimeError('Destination reports are not ready')
             return reports

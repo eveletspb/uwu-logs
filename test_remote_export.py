@@ -53,3 +53,24 @@ class RemoteExportTests(unittest.TestCase):
             with patch('remote_export.requests.Session',return_value=session):
                 self.assertEqual(exporter.send(archive,{'slices':{'raid':{}},'server':'stable','timezone':'UTC'}),['raid'])
             self.assertEqual(session.post.call_count,2)
+
+    def test_destination_can_return_one_report_for_an_archive_with_several_old_slices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / 'raid.zip'
+            archive.write_bytes(b'archive')
+            exporter = RemoteExporter(root, {'remote_export_url': 'http://example.test:5000'})
+            session = MagicMock()
+            session.__enter__.return_value = session
+            before = MagicMock(status_code=204)
+            complete = MagicMock(status_code=200)
+            complete.json.return_value = {'done': 1, 'slices': {'combined': {'done': 1}}}
+            saved = MagicMock(status_code=200, text='<main id="report-main">/reports/combined</main>')
+            session.get.side_effect = [before, complete, saved]
+            with patch('remote_export.requests.Session', return_value=session):
+                reports = exporter.send(archive, {
+                    'slices': {'old-a': {}, 'old-b': {}},
+                    'server': 'stable',
+                    'timezone': 'UTC',
+                })
+            self.assertEqual(reports, ['combined'])

@@ -136,6 +136,7 @@ function send_post() {
   params_obj["sec"] = SELECT_SLICE_SECONDS.value;
   const END_POINT = `/reports/${REPORT_ID}/get_dps`;
   GET_DPS_REQUEST.open("POST", END_POINT);
+  GET_DPS_REQUEST.setRequestHeader("Content-Type", "application/json");
   GET_DPS_REQUEST.send(JSON.stringify(params_obj));
 }
 

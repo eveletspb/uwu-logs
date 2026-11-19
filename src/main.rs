@@ -602,6 +602,81 @@ async fn dps(
 }
 
 #[derive(Deserialize)]
+struct CompareQuery {
+    class: String,
+    target: Option<String>,
+}
+
+async fn comparison(
+    State(app): State<App>,
+    UrlPath(id): UrlPath<String>,
+    Query(query): Query<ReportQuery>,
+    Json(data): Json<CompareQuery>,
+) -> Result<Json<serde_json::Value>, Error> {
+    blocking(move || {
+        let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        let selected = select(&mut report, &query)?;
+        Ok(Json(uwu_logs::compare::compare(
+            &mut report,
+            &selected,
+            &data.class,
+            data.target.as_deref(),
+        )?))
+    })
+    .await
+}
+
+async fn compare_page(
+    State(app): State<App>,
+    UrlPath(id): UrlPath<String>,
+    OriginalUri(uri): OriginalUri,
+) -> Result<Html<String>, Error> {
+    blocking(move || {
+        Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        app.render(
+            "compare.html",
+            context! {
+                request => context! { path => uri.path() }, REPORT_ID => &id, REPORT_NAME => &id,
+                query => uri.query().map(|query| format!("?{query}")).unwrap_or_default(),
+            },
+        )
+    })
+    .await
+}
+
+#[derive(Deserialize)]
+struct SpellSearch {
+    filter: String,
+}
+
+async fn search_spells(
+    State(app): State<App>,
+    UrlPath(id): UrlPath<String>,
+    body: axum::body::Bytes,
+) -> Result<Json<std::collections::BTreeMap<String, String>>, Error> {
+    let data = serde_json::from_slice::<SpellSearch>(&body)
+        .map_err(|_| Error(StatusCode::BAD_REQUEST, "Invalid spell filter"))?;
+    blocking(move || {
+        let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        Ok(Json(uwu_logs::compare::spell_search(
+            &mut report,
+            &data.filter,
+        )?))
+    })
+    .await
+}
+
+async fn about(
+    State(app): State<App>,
+    OriginalUri(uri): OriginalUri,
+) -> Result<Html<String>, Error> {
+    app.render(
+        "about.html",
+        context! { request => context! { path => uri.path() } },
+    )
+}
+
+#[derive(Deserialize)]
 struct Download {
     format: Option<String>,
 }
@@ -719,6 +794,8 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     };
     let router = Router::new()
         .route("/", get(library))
+        .route("/about", get(about))
+        .route("/support", get(about))
         .route("/logs_list", get(library))
         .route("/raid_calendar", get(library))
         .route("/local-health", get(health))
@@ -735,6 +812,11 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .route("/reports/{id}/{section}/", get(report_section))
         .route("/reports/{id}/spell/{spell}/", get(spell_section))
         .route("/reports/{id}/download", get(download))
+        .route("/reports/{id}/compare/", get(compare_page).post(comparison))
+        .route(
+            "/reports/{id}/spellsearch",
+            axum::routing::post(search_spells),
+        )
         .route(
             "/reports/{id}/report_slices/",
             axum::routing::post(report_slices),
