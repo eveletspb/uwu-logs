@@ -180,7 +180,9 @@ attempts. `damage` is outgoing damage including attributed pets, `healing`
 is effective healing including attributed absorbs, `damage_taken` counts
 damage received by the character, and `deaths` counts player `UNIT_DIED`
 events. DPS, HPS and DTPS use the full attempt duration or the sum of all
-attempt durations for the report. Rates are null for zero duration.
+attempt durations for the report. Rates are null for zero duration. The server
+streams attempts as they are calculated, then writes the report totals. The
+response is a single JSON document.
 
 An unknown report returns HTTP 404. An unsupported format returns HTTP 400.
 

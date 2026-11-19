@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from flask import (
-    Flask, Response, jsonify, request,
+    Flask, Response, request,
     make_response,
     redirect,
     render_template,
@@ -306,14 +306,16 @@ def download_logs(report_id):
                 return send_file(archive, as_attachment=True)
 
     try:
-        if export_format == "json":
-            from report_summary import report_summary
-            response = jsonify(report_summary(report))
-            response.headers.set("Content-Disposition", "attachment", filename=f"{report_id}.json")
-            return response
         lines = report.LOGS
     except FileNotFoundError:
         raise NotFound() from None
+    if export_format == "json":
+        from report_summary import stream_report_summary
+
+        response = Response(stream_report_summary(report), mimetype="application/json")
+        response.headers.set("Content-Disposition", "attachment", filename=f"{report_id}.json")
+        return response
+
     chunks = ("\n".join(lines[start:start + 1024]) + "\n"
               for start in range(0, len(lines), 1024))
     response = Response(chunks, content_type="text/plain; charset=utf-8")

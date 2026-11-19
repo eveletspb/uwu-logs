@@ -1,5 +1,6 @@
 """Numeric export of the same encounter windows used by the report viewer."""
 from collections import Counter, defaultdict
+import json
 
 from logs_dmg_heals import add_pets_guids
 
@@ -13,13 +14,16 @@ def with_rates(totals, duration):
     })
 
 
-def report_summary(report):
+def stream_report_summary(report):
+    metadata = json.dumps({"schema_version": 1, "report_id": report.NAME}, ensure_ascii=False)
+    yield metadata[:-1] + ',"encounters":['
+
     names = report.PLAYERS_GUIDS
     raid_players = defaultdict(Counter)
-    encounters = []
     duration = 0
-    for segment in sorted((s for group in report.SEGMENTS.values() for s in group),
-                          key=lambda segment: segment.start):
+    segments = sorted((s for group in report.SEGMENTS.values() for s in group),
+                      key=lambda segment: segment.start)
+    for index, segment in enumerate(segments):
         start, end = segment.start, segment.end
         seconds = segment.duration
         damage_heal = report.get_slice_damage_heal_absorbs(start, end)
@@ -48,14 +52,15 @@ def report_summary(report):
                 totals[key] += values[key]
 
         duration += seconds
-        encounters.append(dict(boss=segment.encounter_name, boss_slug=segment.encounter_name_html,
+        encounter = dict(boss=segment.encounter_name, boss_slug=segment.encounter_name_html,
                                difficulty=segment.difficulty, attempt=segment.attempt,
                                outcome=segment.attempt_type, duration_seconds=seconds,
                                report_path=f"/reports/{report.NAME}/{segment.href}",
-                               totals=with_rates(totals, seconds), players=players))
+                               totals=with_rates(totals, seconds), players=players)
+        yield ("," if index else "") + json.dumps(encounter, ensure_ascii=False)
 
     totals = {key: sum(player[key] for player in raid_players.values()) for key in METRICS}
-    return dict(schema_version=1, report_id=report.NAME, duration_seconds=round(duration, 3),
-                totals=with_rates(totals, duration), encounters=encounters,
-                players={guid: dict(name=names[guid], **with_rates(values, duration))
-                         for guid, values in raid_players.items()})
+    summary = dict(duration_seconds=round(duration, 3), totals=with_rates(totals, duration),
+                   players={guid: dict(name=names[guid], **with_rates(values, duration))
+                            for guid, values in raid_players.items()})
+    yield "]," + json.dumps(summary, ensure_ascii=False)[1:]
