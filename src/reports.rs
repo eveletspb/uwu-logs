@@ -50,6 +50,8 @@ pub struct Metadata {
     pub time_index: Vec<(u64, u64)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lockout: Option<Lockout>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub captures: BTreeSet<String>,
 }
 
 impl Metadata {
@@ -395,6 +397,16 @@ impl Report {
         }
     }
 
+    pub fn archive(&self, root: &Path) -> Option<PathBuf> {
+        match &self.source {
+            Source::Legacy(paths) if paths.len() == 1 => {
+                let archive = root.join("LogsRaw").join(format!("{}.7z", self.id));
+                archive.is_file().then_some(archive)
+            }
+            _ => None,
+        }
+    }
+
     pub fn copy_log(&mut self, mut output: impl Write) -> io::Result<()> {
         match &mut self.source {
             Source::Indexed(report) => report.read_events(0..report.event_count(), output),
@@ -599,7 +611,7 @@ pub fn valid_id(id: &str) -> bool {
             .is_some_and(|prefix| prefix.iter().all(u8::is_ascii_digit))
         && !id
             .bytes()
-            .any(|b| b.is_ascii_control() || matches!(b, b'/' | b'\\'))
+            .any(|b| b.is_ascii_control() || b"/\\:*?\"<>|".contains(&b))
         && id.split("--").count() >= 4
 }
 
@@ -618,6 +630,8 @@ fn read_cache<T: DeserializeOwned + Default>(path: &Path) -> io::Result<T> {
         Err(error) => Err(error),
     }
 }
+
+static PUBLISH: Mutex<()> = Mutex::new(());
 
 pub fn import_log(root: &Path, input: impl BufRead, year: u32, realm: &str) -> io::Result<String> {
     import_logs(root, [Ok(input)], year, realm)
@@ -639,6 +653,25 @@ pub fn import_with_manifest(
     realm: &str,
     manifest: Option<(&Manifest, &str)>,
 ) -> io::Result<String> {
+    import_capture(root, inputs, year, realm, manifest, None)
+}
+
+pub fn import_capture(
+    root: &Path,
+    inputs: impl IntoIterator<Item = io::Result<impl BufRead>>,
+    year: u32,
+    realm: &str,
+    manifest: Option<(&Manifest, &str)>,
+    capture: Option<&str>,
+) -> io::Result<String> {
+    if let Some(capture) = capture
+        && !valid_capture(capture)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid capture ID",
+        ));
+    }
     if !(2000..2100).contains(&year) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -648,16 +681,48 @@ pub fn import_with_manifest(
     let directory = root.join("LogsDir");
     fs::create_dir_all(&directory)?;
     let (staged, file) = Staged::create(&directory)?;
-    let (first, author, lockout) = build_native(file, inputs, year, realm, manifest, None)?;
-    static PUBLISH: Mutex<()> = Mutex::new(());
+    let captures = capture
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>();
+    let (first, author, lockout) =
+        build_native(file, inputs, year, realm, manifest, (None, &captures))?;
     let _guard = PUBLISH
         .lock()
         .map_err(|_| io::Error::other("report publication lock failed"))?;
 
+    if let Some(capture) = capture
+        && let Some((id, _)) = find_native(&directory, |metadata| {
+            metadata
+                .get("captures")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|captures| {
+                    captures.iter().any(|value| value.as_str() == Some(capture))
+                })
+        })?
+    {
+        return Ok(id);
+    }
     if let Some(lockout) = &lockout
-        && let Some((id, previous)) = find_lockout(&directory, lockout)?
+        && let Some((id, previous)) = find_native(&directory, |metadata| {
+            metadata
+                .get("lockout")
+                .and_then(|value| serde_json::from_value::<Lockout>(value.clone()).ok())
+                .is_some_and(|previous| previous.matches(lockout))
+        })?
     {
         let previous_year = 2000 + id[..2].parse::<u32>().unwrap_or(0);
+        let mut merged_captures = captures;
+        merged_captures.extend(
+            previous
+                .metadata()
+                .get("captures")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_owned),
+        );
         let previous = BufReader::new(previous.into_reader());
         let current = BufReader::new(ReportFile::open(File::open(&staged.0)?)?.into_reader());
         let merge = BufReader::new(Merge::new([previous, current], [previous_year, year])?);
@@ -668,7 +733,7 @@ pub fn import_with_manifest(
             previous_year.min(year),
             realm,
             None,
-            Some(lockout.clone()),
+            (Some(lockout.clone()), &merged_captures),
         )?;
         let original = directory.join(format!("{id}.uwu"));
         let backups = directory
@@ -714,7 +779,7 @@ fn build_native(
     year: u32,
     realm: &str,
     manifest: Option<(&Manifest, &str)>,
-    inherited: Option<Lockout>,
+    provenance: (Option<Lockout>, &BTreeSet<String>),
 ) -> io::Result<(Stamp, Option<String>, Option<Lockout>)> {
     let mut file = BufWriter::new(file);
     let mut writer = ReportWriter::new(&mut file)?;
@@ -777,16 +842,132 @@ fn build_native(
             timezone,
         );
     }
-    if inherited.is_some() {
-        metadata.lockout = inherited;
+    if provenance.0.is_some() {
+        metadata.lockout = provenance.0;
     }
+    metadata.captures.clone_from(provenance.1);
     writer.finish(serde_json::to_value(&metadata).map_err(io::Error::other)?)?;
     file.flush()?;
     file.get_ref().sync_all()?;
     Ok((first, author, metadata.lockout))
 }
 
-fn find_lockout(directory: &Path, key: &Lockout) -> io::Result<Option<(String, ReportFile<File>)>> {
+pub fn valid_capture(value: &str) -> bool {
+    (8..=80).contains(&value.len())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte))
+}
+
+pub fn merge_reports(root: &Path, ids: &[String]) -> io::Result<String> {
+    let mut ids = ids.to_vec();
+    ids.sort();
+    ids.dedup();
+    if ids.len() < 2 || !ids.iter().all(|id| valid_id(id)) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "provide at least two distinct report IDs",
+        ));
+    }
+    let identity = ids[0].splitn(3, "--").nth(2).unwrap();
+    if !ids
+        .iter()
+        .all(|id| id.splitn(3, "--").nth(2) == Some(identity))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "reports must share the author and server",
+        ));
+    }
+    let directory = root.join("LogsDir");
+    let _guard = PUBLISH
+        .lock()
+        .map_err(|_| io::Error::other("report publication lock failed"))?;
+    let mut reports = ids
+        .iter()
+        .map(|id| Report::open(root, id))
+        .collect::<io::Result<Vec<_>>>()?
+        .into_iter();
+    let canonical = reports.next().unwrap();
+    let lockout = canonical.metadata.lockout.clone();
+    let mut captures = canonical.metadata.captures.clone();
+    let year = year_from_id(&canonical.id);
+    let realm = canonical.id.splitn(4, "--").nth(3).unwrap();
+    let mut reader = report_reader(canonical.source)?;
+    let mut current = None;
+    for part in reports {
+        captures.extend(part.metadata.captures);
+        let next = report_reader(part.source)?;
+        let merged = BufReader::new(Merge::new([reader, next], [year, year_from_id(&part.id)])?);
+        let (staged, output) = Staged::create(&directory)?;
+        build_native(
+            output,
+            [Ok(merged)],
+            year,
+            realm,
+            None,
+            (lockout.clone(), &captures),
+        )?;
+        reader = BufReader::new(Box::new(
+            ReportFile::open(File::open(&staged.0)?)?.into_reader(),
+        ));
+        current = Some(staged);
+    }
+    drop(reader);
+    let staged = current.unwrap();
+    let target = directory.join(format!("{}.uwu", canonical.id));
+    let backup = directory
+        .join(".raid-merge-backups")
+        .join(staged.0.file_name().unwrap());
+    fs::create_dir_all(&backup)?;
+    if target.is_file() {
+        fs::hard_link(&target, backup.join(target.file_name().unwrap()))?;
+    }
+    let aliases_path = root.join("_report_aliases.json");
+    let mut aliases: BTreeMap<String, String> = match read_json(&aliases_path) {
+        Ok(aliases) => {
+            fs::copy(&aliases_path, backup.join("_report_aliases.json"))?;
+            aliases
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => BTreeMap::new(),
+        Err(error) => return Err(error),
+    };
+    for existing in aliases.values_mut() {
+        if ids.contains(existing) {
+            existing.clone_from(&canonical.id);
+        }
+    }
+    aliases.remove(&canonical.id);
+    for alias in ids.into_iter().skip(1) {
+        aliases.insert(alias, canonical.id.clone());
+    }
+    let (alias, mut output) = Staged::create(root)?;
+    serde_json::to_writer(&mut output, &aliases).map_err(io::Error::other)?;
+    output.sync_all()?;
+    drop(output);
+    fs::rename(&staged.0, target)?;
+    fs::rename(&alias.0, aliases_path)?;
+    Ok(canonical.id)
+}
+
+fn year_from_id(id: &str) -> u32 {
+    2000 + id[..2].parse::<u32>().unwrap_or(0)
+}
+
+fn report_reader(source: Source) -> io::Result<BufReader<Box<dyn io::Read>>> {
+    let reader: Box<dyn io::Read> = match source {
+        Source::Indexed(report) => Box::new(report.into_reader()),
+        Source::Legacy(paths) => {
+            Box::new(zstd::stream::read::Decoder::new(File::open(&paths[0])?)?)
+        }
+    };
+    Ok(BufReader::new(reader))
+}
+
+fn find_native(
+    directory: &Path,
+    has: impl Fn(&serde_json::Value) -> bool,
+) -> io::Result<Option<(String, ReportFile<File>)>> {
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -797,12 +978,7 @@ fn find_lockout(directory: &Path, key: &Lockout) -> io::Result<Option<(String, R
             continue;
         };
         let report = ReportFile::open(File::open(entry.path())?)?;
-        let Some(metadata) = report.metadata().get("lockout") else {
-            continue;
-        };
-        let lockout: Lockout =
-            serde_json::from_value(metadata.clone()).map_err(io::Error::other)?;
-        if lockout.matches(key) {
+        if has(report.metadata()) {
             return Ok(Some((id.to_owned(), report)));
         }
     }
@@ -1028,8 +1204,10 @@ impl LegacyGroups {
     }
 
     pub fn is_fragment(&self, id: &str) -> bool {
-        self.parts
-            .values()
-            .any(|parts| parts.iter().skip(1).any(|part| part == id))
+        self.aliases.contains_key(id)
+            || self
+                .parts
+                .values()
+                .any(|parts| parts.iter().skip(1).any(|part| part == id))
     }
 }

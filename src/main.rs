@@ -1,3 +1,4 @@
+mod auto_import;
 mod upload;
 
 use axum::body::Body;
@@ -25,6 +26,8 @@ struct App {
     templates: Arc<Environment<'static>>,
     uploads: Arc<upload::Uploads>,
     legacy_groups: Arc<LegacyGroups>,
+    worker_status: auto_import::Status,
+    viewer: Option<String>,
 }
 
 #[derive(Debug)]
@@ -721,8 +724,25 @@ async fn download(
             }
         })
         .collect::<String>();
+    let root = Arc::clone(&app.root);
     let mut report =
         blocking(move || Ok(Report::open_group(&app.root, &id, &app.legacy_groups)?)).await?;
+    if query.format.is_none()
+        && let Some(path) = report.archive(&root)
+    {
+        let file = tokio::fs::File::open(path).await?;
+        return Ok((
+            [
+                (header::CONTENT_TYPE, "application/x-7z-compressed".into()),
+                (
+                    header::CONTENT_DISPOSITION,
+                    format!("attachment; filename=\"{filename}.7z\""),
+                ),
+            ],
+            Body::from_stream(ReaderStream::new(file)),
+        )
+            .into_response());
+    }
     if format == "json" {
         let summary = blocking(move || {
             let windows = report.metadata.encounters.clone();
@@ -766,13 +786,17 @@ async fn download(
         .into_response())
 }
 
+fn app_env(key: &str, old: &str) -> Option<std::ffi::OsString> {
+    env::var_os(key).or_else(|| env::var_os(old))
+}
+
 async fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "app": "UwU Logs Rust", "local_only": true }))
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let root = PathBuf::from(env::var_os("UWU_ROOT").unwrap_or_else(|| ".".into()));
+    let root = PathBuf::from(app_env("RAIDLEDGER_ROOT", "UWU_ROOT").unwrap_or_else(|| ".".into()));
     match env::args().nth(1).as_deref() {
         Some("import") => {
             let [log, year, server] = env::args()
@@ -787,6 +811,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &server,
             )?;
             println!("{id}");
+        }
+        Some("merge") => {
+            let ids = env::args().skip(2).collect::<Vec<_>>();
+            println!("{}", uwu_logs::reports::merge_reports(&root, &ids)?);
         }
         Some("summary") => {
             let id = env::args()
@@ -805,16 +833,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(root.join("LogsDir"))?;
-    let assets = PathBuf::from(env::var_os("UWU_ASSETS").unwrap_or_else(|| ".".into()));
+    let assets =
+        PathBuf::from(app_env("RAIDLEDGER_ASSETS", "UWU_ASSETS").unwrap_or_else(|| ".".into()));
     let mut templates = Environment::new();
     templates.set_loader(path_loader(assets.join("templates")));
     templates.add_filter("urlencode", path_segment);
     templates.add_global("RUST_VIEW", minijinja::Value::from(true));
+    let root = root.canonicalize()?;
+    let address = app_env("RAIDLEDGER_BIND", "UWU_BIND")
+        .map(|address| address.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "127.0.0.1:5000".into());
+    let listener = tokio::net::TcpListener::bind(&address).await?;
+    let config = auto_import::Config::load(&root)?;
+    let viewer = config.as_ref().and_then(auto_import::Config::viewer);
+    let worker_status = Arc::new(std::sync::Mutex::new(serde_json::json!({
+        "state": if config.is_some() { "starting" } else { "disabled" }
+    })));
+    if let Some(config) = config {
+        templates.add_global("AUTO_IMPORT", minijinja::Value::from(true));
+        auto_import::start(root.clone(), config, Arc::clone(&worker_status));
+    }
     let app = App {
         legacy_groups: Arc::new(LegacyGroups::load(&root)?),
         root: Arc::new(root),
         templates: Arc::new(templates),
         uploads: Arc::new(upload::Uploads::default()),
+        worker_status,
+        viewer,
     };
     let router = Router::new()
         .route("/", get(library))
@@ -823,6 +868,7 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .route("/logs_list", get(library))
         .route("/raid_calendar", get(library))
         .route("/local-health", get(health))
+        .route("/local-status", get(auto_import::status))
         .route("/upload", get(upload::form).post(upload::receive))
         .route("/upload_progress", get(upload::progress))
         .route("/reports/{id}/", get(report_page))
@@ -852,9 +898,11 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             axum::routing::post(players_classes),
         )
         .nest_service("/static", ServeDir::new(assets.join(Path::new("static"))))
+        .layer(axum::middleware::from_fn_with_state(
+            app.clone(),
+            auto_import::viewer_redirect,
+        ))
         .with_state(app);
-    let address = env::var("UWU_BIND").unwrap_or_else(|_| "127.0.0.1:5000".into());
-    let listener = tokio::net::TcpListener::bind(&address).await?;
     eprintln!("Listening on {address}");
     axum::serve(
         listener,

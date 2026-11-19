@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="/static/analysis-workspace.css?v=1">
 </head>
 <body>
-  {% if not RUST_VIEW %}<script defer src="/static/local-status.js"></script>{% endif %}
+  {% if not RUST_VIEW or AUTO_IMPORT %}<script defer src="/static/local-status.js"></script>{% endif %}
   <nav aria-label="Основная навигация">
     <a id="home-button" href="/">UwU Logs<small>RAID ANALYTICS</small></a>
     <div id="top-nav">

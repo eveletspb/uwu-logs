@@ -22,7 +22,6 @@
       const response = await fetch('/local-status');
       const data = await response.json();
       banner.textContent = (labels[data.state] || 'Автоимпорт рейдов включён.')
-        + ' Хранение: последние 30 дней.'
         + (data.warning ? ' Журнал больше 3 ГБ: закройте WoW после рейда для архивирования.' : '');
     } catch (_) {
       banner.textContent = 'Нет связи с локальным автоимпортом.';

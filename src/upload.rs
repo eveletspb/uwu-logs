@@ -17,7 +17,7 @@ use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uwu_logs::lockouts::Manifest;
-use uwu_logs::reports::{import_log, import_with_manifest};
+use uwu_logs::reports::{import_capture, valid_capture};
 
 const CHUNK_SIZE: usize = 256 * 1024;
 const MAX_CHUNKS: usize = 32_768;
@@ -47,6 +47,8 @@ struct UploadMetadata {
     #[serde(default)]
     timezone: String,
     chunks: usize,
+    capture: Option<String>,
+    year: Option<u32>,
 }
 
 pub async fn form(State(app): State<App>) -> Result<Html<String>, Error> {
@@ -83,6 +85,14 @@ pub async fn receive(
     {
         let data: UploadMetadata = serde_json::from_slice(&body)
             .map_err(|_| Error(StatusCode::BAD_REQUEST, "Invalid upload metadata"))?;
+        if data
+            .capture
+            .as_deref()
+            .is_some_and(|capture| !valid_capture(capture))
+            || data.year.is_some_and(|year| !(2000..2100).contains(&year))
+        {
+            return Err(Error(StatusCode::BAD_REQUEST, "Invalid capture metadata"));
+        }
         let path = {
             let mut uploads = app.uploads.0.lock().unwrap();
             let upload = uploads
@@ -100,7 +110,12 @@ pub async fn receive(
             upload.path.clone()
         };
         tokio::task::spawn_blocking(move || {
-            let result = import_file(&app.root, &path, &data, current_year());
+            let result = import_file(
+                &app.root,
+                &path,
+                &data,
+                data.year.unwrap_or_else(current_year),
+            );
             let mut uploads = app.uploads.0.lock().unwrap();
             if let Some(upload) = uploads.get_mut(&peer) {
                 upload.processing = false;
@@ -209,9 +224,16 @@ fn import_file(
     let filename = request.filename.to_ascii_lowercase();
     let realm = &request.server;
     if filename.ends_with(".txt") {
-        return import_log(root, BufReader::new(File::open(source)?), year, realm);
+        return import_capture(
+            root,
+            [Ok(BufReader::new(File::open(source)?))],
+            year,
+            realm,
+            None,
+            request.capture.as_deref(),
+        );
     }
-    let sevenzip = std::env::var_os("UWU_7Z").unwrap_or_else(|| "7zz".into());
+    let sevenzip = sevenzip();
     let mut listing = Command::new(&sevenzip)
         .args(["l", "-ba", "-slt", "-p-", "--"])
         .arg(source)
@@ -265,7 +287,7 @@ fn import_file(
     let readers = entries
         .into_iter()
         .map(|entry| archive_entry(&sevenzip, source, entry).map(BufReader::new));
-    import_with_manifest(
+    import_capture(
         root,
         readers,
         year,
@@ -273,7 +295,18 @@ fn import_file(
         manifest
             .as_ref()
             .map(|manifest| (manifest, request.timezone.as_str())),
+        request.capture.as_deref(),
     )
+}
+
+pub(crate) fn sevenzip() -> std::ffi::OsString {
+    crate::app_env("RAIDLEDGER_7Z", "UWU_7Z").unwrap_or_else(|| {
+        if cfg!(windows) {
+            "7z.exe".into()
+        } else {
+            "7zz".into()
+        }
+    })
 }
 
 fn archive_entry(executable: &OsStr, source: &Path, entry: &str) -> io::Result<ArchiveEntry> {
@@ -314,8 +347,12 @@ impl Drop for ArchiveEntry {
     }
 }
 
-fn current_year() -> u32 {
-    let mut remaining = SystemTime::now()
+pub(crate) fn current_year() -> u32 {
+    year_at(SystemTime::now())
+}
+
+pub(crate) fn year_at(stamp: SystemTime) -> u32 {
+    let mut remaining = stamp
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
