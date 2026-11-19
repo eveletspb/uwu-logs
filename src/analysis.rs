@@ -1,213 +1,189 @@
-use crate::absorbs::RULES;
+use crate::appearance::school;
 use crate::combat::{Event, Stamp};
 use crate::reports::{Encounter, Report};
 use serde::Serialize;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::io;
 
-#[derive(Serialize)]
-pub struct Row {
-    pub unit: String,
-    pub detail: String,
-    pub value: i64,
-}
+type DeathRow = (
+    String,
+    &'static str,
+    &'static str,
+    String,
+    String,
+    String,
+    String,
+    String,
+);
 
 #[derive(Serialize)]
 pub struct Death {
     pub player: String,
-    pub seconds: f64,
-    pub boss: String,
-    pub hits: Vec<Hit>,
+    pub from_start: String,
+    pub death: Vec<DeathRow>,
 }
 
-#[derive(Clone, Serialize)]
-pub struct Hit {
-    pub source: String,
-    pub spell: String,
-    pub amount: i64,
-    pub offset_millis: i64,
+struct Entry {
+    time: i64,
+    flag: &'static str,
+    detail: &'static str,
+    source: String,
+    spell: String,
+    value: String,
+    extra: String,
 }
 
-pub fn deaths(report: &mut Report, encounters: &[Encounter]) -> io::Result<Vec<Death>> {
+pub struct Deaths {
+    pub deaths: Vec<(usize, Death)>,
+    pub spells: BTreeMap<String, Spell>,
+}
+
+#[derive(Serialize)]
+pub struct Spell {
+    name: String,
+    color: &'static str,
+}
+
+fn time(millis: i64) -> String {
+    format!(
+        "{:02}:{:02}.{:03}",
+        millis / 60_000,
+        millis / 1000 % 60,
+        millis % 1000
+    )
+}
+
+fn flags(event: &Event<'_>) -> Option<(&'static str, &'static str)> {
+    Some(match event.kind {
+        "SWING_DAMAGE" => ("DAMAGE", "SWING"),
+        "RANGE_DAMAGE" => ("DAMAGE", "RANGE"),
+        "SPELL_DAMAGE" => ("DAMAGE", "SPELL"),
+        "SPELL_PERIODIC_DAMAGE" => ("DAMAGE", "DOT"),
+        "ENVIRONMENTAL_DAMAGE" => ("DAMAGE", "ENVIRONMENT"),
+        "DAMAGE_SHIELD" => ("DAMAGE", "SHIELD"),
+        "SPELL_HEAL" => ("HEAL", "HEAL"),
+        "SPELL_PERIODIC_HEAL" => ("HEAL", "HOT"),
+        "SWING_MISSED" => ("MISS", "SWING"),
+        "RANGE_MISSED" => ("MISS", "RANGE"),
+        "SPELL_MISSED" => ("MISS", "SPELL"),
+        "SPELL_PERIODIC_MISSED" => ("MISS", "DOT"),
+        "SPELL_AURA_APPLIED" => (
+            if event.payload.contains("DEBUFF") {
+                "DEBUFF"
+            } else {
+                "BUFF"
+            },
+            "APPLIED",
+        ),
+        "SPELL_AURA_REFRESH" => (
+            if event.payload.contains("DEBUFF") {
+                "DEBUFF"
+            } else {
+                "BUFF"
+            },
+            "REFRESH",
+        ),
+        "SPELL_AURA_REMOVED" => (
+            if event.payload.contains("DEBUFF") {
+                "DEBUFF"
+            } else {
+                "BUFF"
+            },
+            "REMOVED",
+        ),
+        "UNIT_DIED" => ("DIED", ""),
+        "SPELL_INSTAKILL" => ("DIED", "INSTAKILL"),
+        _ => return None,
+    })
+}
+
+pub fn deaths(report: &mut Report, encounters: &[Encounter]) -> io::Result<Deaths> {
     let year = report.id[..2].parse::<u32>().unwrap_or(0) + 2000;
-    let known = report
-        .metadata
-        .players
-        .keys()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let mut deaths = Vec::new();
+    let roster = report.metadata.players.clone();
+    let mut result = Deaths {
+        deaths: Vec::new(),
+        spells: BTreeMap::new(),
+    };
     for encounter in encounters {
         let mut start = None::<Stamp>;
-        let mut history = BTreeMap::<String, VecDeque<Hit>>::new();
+        let mut history = BTreeMap::<String, VecDeque<Entry>>::new();
         report.visit(Some(encounter.start..encounter.end), |_, line| {
             let Some(event) = Event::parse(line) else {
                 return;
             };
             let origin = *start.get_or_insert(event.stamp);
-            if !known.contains(event.target) {
+            let Some(player) = roster.get(event.target) else {
                 return;
-            }
+            };
+            let Some((flag, detail)) = flags(&event) else {
+                return;
+            };
             let millis = event.stamp.relative_to(origin, year);
-            if event.damage() {
-                let hits = history.entry(event.target.into()).or_default();
-                while hits
-                    .front()
-                    .is_some_and(|hit| millis - hit.offset_millis > 10_000)
-                {
-                    hits.pop_front();
-                }
-                hits.push_back(Hit {
-                    source: event.source_name.into(),
-                    spell: event.spell_name.into(),
-                    amount: event.amount,
-                    offset_millis: millis,
-                });
-            } else if event.kind == "UNIT_DIED" {
-                let hits = history
-                    .remove(event.target)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|hit| millis - hit.offset_millis <= 10_000)
-                    .map(|mut hit| {
-                        hit.offset_millis -= millis;
-                        hit
+            if !event.spell.is_empty() {
+                result
+                    .spells
+                    .entry(event.spell.to_owned())
+                    .or_insert_with(|| Spell {
+                        name: event.spell_name.to_owned(),
+                        color: school(event.payload.split(',').next().unwrap_or_default()),
+                    });
+            }
+            let hits = history.entry(event.target.to_owned()).or_default();
+            while hits
+                .front()
+                .is_some_and(|entry| millis - entry.time > 60_000)
+            {
+                hits.pop_front();
+            }
+            hits.push_back(Entry {
+                time: millis,
+                flag,
+                detail,
+                source: event.source.to_owned(),
+                spell: event.spell.to_owned(),
+                value: if event.amount == 0 {
+                    String::new()
+                } else {
+                    event.amount.to_string()
+                },
+                extra: if event.excess == 0 {
+                    String::new()
+                } else {
+                    event.excess.to_string()
+                },
+            });
+            if flag == "DIED" {
+                let death = hits
+                    .drain(..)
+                    .rev()
+                    .map(|entry| {
+                        let offset = if entry.time == millis {
+                            "0:00.000".into()
+                        } else {
+                            format!("-{}", time(millis - entry.time))
+                        };
+                        (
+                            offset,
+                            entry.flag,
+                            entry.detail,
+                            entry.source,
+                            event.target.to_owned(),
+                            entry.spell,
+                            entry.value,
+                            entry.extra,
+                        )
                     })
                     .collect();
-                deaths.push(Death {
-                    player: event.target_name.into(),
-                    seconds: millis as f64 / 1000.0,
-                    boss: encounter.boss.clone(),
-                    hits,
-                });
+                result.deaths.push((
+                    result.deaths.len(),
+                    Death {
+                        player: player.clone(),
+                        from_start: time(millis),
+                        death,
+                    },
+                ));
             }
         })?;
     }
-    Ok(deaths)
-}
-
-#[derive(Clone, Copy)]
-pub enum View<'a> {
-    Targets,
-    Auras,
-    Consumables,
-    Resources,
-    Units,
-    Spell(&'a str),
-}
-
-impl View<'_> {
-    pub fn labels(self) -> (&'static str, &'static str, &'static str) {
-        match self {
-            Self::Targets => ("Урон по целям", "Цель", "Урон"),
-            Self::Auras => ("Ауры", "Игрок", "Применения"),
-            Self::Consumables => ("Расходники", "Игрок", "Использования"),
-            Self::Resources => ("Ресурсы", "Игрок", "Получено"),
-            Self::Units => ("Участники", "Персонаж", "События"),
-            Self::Spell(_) => ("Заклинание", "Источник", "События"),
-        }
-    }
-}
-
-fn resource(value: &str) -> &str {
-    match value {
-        "0" => "Mana",
-        "1" => "Rage",
-        "2" => "Focus",
-        "3" => "Energy",
-        "4" => "Happiness",
-        "5" => "Runes",
-        "6" => "Runic Power",
-        _ => value,
-    }
-}
-
-pub fn inspect(
-    report: &mut Report,
-    encounters: &[Encounter],
-    view: View<'_>,
-) -> io::Result<Vec<Row>> {
-    let mut totals = BTreeMap::<(String, String), i64>::new();
-    let roster = report.metadata.players.clone();
-    let units = report.metadata.units.clone();
-    for encounter in encounters {
-        report.visit(Some(encounter.start..encounter.end), |_, line| {
-            let Some(event) = Event::parse(line) else {
-                return;
-            };
-            let owner = units
-                .get(event.source)
-                .and_then(|unit| unit.master_guid.as_deref())
-                .unwrap_or(event.source);
-            let outgoing_player = roster.contains_key(owner);
-            let on_player = roster.contains_key(event.target);
-            let spell = event.spell_name;
-            let (unit, detail, value) = match view {
-                View::Targets if event.damage() && outgoing_player && !on_player => (
-                    event.target_name,
-                    roster
-                        .get(owner)
-                        .cloned()
-                        .unwrap_or_else(|| event.source_name.into()),
-                    event.amount - event.excess,
-                ),
-                View::Auras
-                    if on_player
-                        && matches!(event.kind, "SPELL_AURA_APPLIED" | "SPELL_AURA_REFRESH") =>
-                {
-                    (
-                        event.target_name,
-                        format!("{spell} · {}", event.source_name),
-                        1,
-                    )
-                }
-                View::Consumables
-                    if outgoing_player
-                        && event.kind == "SPELL_CAST_SUCCESS"
-                        && RULES.consumables.contains(event.spell) =>
-                {
-                    (event.source_name, spell.to_owned(), 1)
-                }
-                View::Consumables
-                    if on_player
-                        && event.kind == "SPELL_AURA_APPLIED"
-                        && event.spell == "28714" =>
-                {
-                    (event.target_name, spell.to_owned(), 1)
-                }
-                View::Resources if on_player && event.kind.ends_with("_ENERGIZE") => (
-                    event.target_name,
-                    format!(
-                        "{} · {spell}",
-                        resource(event.payload.split(',').nth(2).unwrap_or_default())
-                    ),
-                    event.amount,
-                ),
-                View::Units => (
-                    event.source_name,
-                    roster
-                        .get(owner)
-                        .filter(|name| *name != event.source_name)
-                        .cloned()
-                        .unwrap_or_default(),
-                    1,
-                ),
-                View::Spell(id) if id == event.spell => {
-                    (event.source_name, event.kind.to_owned(), 1)
-                }
-                _ => return,
-            };
-            *totals.entry((unit.to_owned(), detail)).or_default() += value;
-        })?;
-    }
-    let mut result = totals
-        .into_iter()
-        .map(|((unit, detail), value)| Row {
-            unit,
-            detail,
-            value,
-        })
-        .collect::<Vec<_>>();
-    result.sort_by_key(|row| std::cmp::Reverse(row.value));
     Ok(result)
 }

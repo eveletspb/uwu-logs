@@ -4,7 +4,7 @@ use crate::reports::{Encounter, Report, Unit};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::io;
-use std::ops::{AddAssign, Range};
+use std::ops::AddAssign;
 
 #[derive(Serialize, Clone, Default)]
 pub struct Totals {
@@ -12,6 +12,10 @@ pub struct Totals {
     pub healing: i64,
     pub damage_taken: i64,
     pub deaths: i64,
+    #[serde(skip)]
+    pub total_healing: i64,
+    #[serde(skip)]
+    pub useful_damage: i64,
 }
 
 impl AddAssign<&Self> for Totals {
@@ -20,6 +24,8 @@ impl AddAssign<&Self> for Totals {
         self.healing += other.healing;
         self.damage_taken += other.damage_taken;
         self.deaths += other.deaths;
+        self.total_healing += other.total_healing;
+        self.useful_damage += other.useful_damage;
     }
 }
 
@@ -106,11 +112,16 @@ fn add_event(
             record.damage_taken += event.amount;
         }
         if event.target != NIL_GUID && !friendly(event.target) && roster.contains_key(source) {
-            totals.entry(source.into()).or_default().damage += event.amount;
+            let player = totals.entry(source.into()).or_default();
+            player.damage += event.amount;
+            if crate::appearance::useful_target(event.target) {
+                player.useful_damage += event.amount.saturating_sub(event.excess);
+            }
         }
     } else if event.healing() && roster.contains_key(source) {
-        totals.entry(source.into()).or_default().healing +=
-            event.amount.saturating_sub(event.excess);
+        let player = totals.entry(source.into()).or_default();
+        player.healing += event.amount.saturating_sub(event.excess);
+        player.total_healing += event.amount;
     } else if event.kind == "UNIT_DIED"
         && let Some(record) = totals.get_mut(event.target)
     {
@@ -140,7 +151,9 @@ pub fn aggregate(report: &mut Report, encounters: &[Encounter]) -> io::Result<Su
                 .and_then(|unit| unit.master_guid.as_deref())
                 .unwrap_or(&source);
             if roster.contains_key(source) {
-                players.entry(source.into()).or_default().healing += value;
+                let player = players.entry(source.into()).or_default();
+                player.healing += value;
+                player.total_healing += value;
             }
         }
     };
@@ -241,76 +254,6 @@ pub fn aggregate(report: &mut Report, encounters: &[Encounter]) -> io::Result<Su
         encounters: rows,
         players,
     })
-}
-
-#[derive(Default, Serialize)]
-pub struct Spell {
-    pub name: String,
-    pub damage: i64,
-    pub healing: i64,
-    pub received_healing: i64,
-    pub taken: i64,
-    pub casts: u64,
-}
-
-pub fn player_spells(
-    report: &mut Report,
-    windows: &[Range<u64>],
-    name: &str,
-    received_only: bool,
-) -> io::Result<BTreeMap<String, Spell>> {
-    let Some((guid, _)) = report
-        .metadata
-        .players
-        .iter()
-        .find(|(guid, player)| name == *guid || name == *player)
-    else {
-        return Err(io::ErrorKind::NotFound.into());
-    };
-    let guid = guid.clone();
-    let units = report.metadata.units.clone();
-    let mut spells = BTreeMap::<String, Spell>::new();
-    for window in windows {
-        report.visit(Some(window.clone()), |_, line| {
-            let Some(event) = Event::parse(line) else {
-                return;
-            };
-            let outgoing = event.source == guid
-                || units
-                    .get(event.source)
-                    .and_then(|unit| unit.master_guid.as_deref())
-                    == Some(guid.as_str());
-            let relevant = if received_only {
-                event.target == guid && event.healing()
-            } else {
-                outgoing || event.target == guid && event.damage()
-            };
-            if event.spell.is_empty() || !relevant {
-                return;
-            }
-            let data = spells.entry(event.spell.into()).or_insert_with(|| Spell {
-                name: event.spell_name.into(),
-                ..Spell::default()
-            });
-            if received_only {
-                data.received_healing += event.amount.saturating_sub(event.excess);
-                return;
-            }
-            if outgoing {
-                if event.damage() {
-                    data.damage += event.amount.saturating_sub(event.excess);
-                } else if event.healing() {
-                    data.healing += event.amount.saturating_sub(event.excess);
-                } else if event.kind == "SPELL_CAST_SUCCESS" {
-                    data.casts += 1;
-                }
-            }
-            if event.target == guid && event.damage() {
-                data.taken += event.amount;
-            }
-        })?;
-    }
-    Ok(spells)
 }
 
 pub fn dps(

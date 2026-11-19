@@ -1,23 +1,9 @@
-{% extends "layout.html" if RUST_TIMELINE else "layout_report.html" %}
+{% extends "layout_report.html" %}
 {% block scripts_head %}
 <script src="/static/timeline-model.js?v=3" defer></script>
 <script src="/static/timeline-workspace.js?v=3" defer></script>
 {% endblock %}
 {% block add_css_file %}<link rel="stylesheet" href="/static/timeline-workspace.css?v=1">{% endblock %}
-{% block report_sidebar %}
-{% if RUST_TIMELINE %}
-<aside class="encounter-sidebar" aria-label="Бои рейда">
-  <div class="sidebar-heading">Бои рейда</div>
-  <div class="encounter-list">
-    {% for encounter in encounters %}
-    <a class="encounter-attempt {{ encounter.outcome }}-link" href="{{ encounter.query }}">{{ encounter.boss }} · {{ encounter.difficulty }}</a>
-    {% endfor %}
-  </div>
-</aside>
-{% else %}
-{{ super() }}
-{% endif %}
-{% endblock %}
 {% block the_main %}
 <main id="timeline-app" data-report="{{ REPORT_ID }}" data-player="{{ SOURCE_NAME }}">
   <div class="tl-heading"><div><span class="tl-eyebrow">Таймлайн игрока</span><h2>{{ SOURCE_NAME }}</h2></div>
@@ -26,7 +12,6 @@
   <div class="tl-player-nav" aria-label="Анализ игрока">
     <a href="/reports/{{ REPORT_ID }}/player/{{ SOURCE_NAME }}/{{ QUERY }}">Урон</a>
     <a href="/reports/{{ REPORT_ID }}/heal/{{ SOURCE_NAME }}/{{ QUERY }}">Лечение</a>
-    <a href="/reports/{{ REPORT_ID }}/healed/{{ SOURCE_NAME }}/{{ QUERY }}">Полученное лечение</a>
     <a href="/reports/{{ REPORT_ID }}/taken/{{ SOURCE_NAME }}/{{ QUERY }}">Полученный урон</a>
     <a class="active" aria-current="page" href="/reports/{{ REPORT_ID }}/casts/{{ SOURCE_NAME }}/{{ QUERY }}">Таймлайн</a>
   </div>

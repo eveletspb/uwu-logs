@@ -14,7 +14,7 @@
         </tr>
       </thead>
       <tbody>
-        {% for player_guid, dmg_by_target in ATTEMPT_DATA.items() %}
+        {% for player_guid, dmg_by_target in (shield_rows if RUST_VIEW else ATTEMPT_DATA.items()) %}
         <tr>
           <td class="player-cell" title="{{ SPECS[player_guid]['spec'] }}">
             <img src="/static/icons/{{ SPECS[player_guid]['icon'] }}.jpg">

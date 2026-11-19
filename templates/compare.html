@@ -1,4 +1,4 @@
-{% extends "layout.html" if RUST_VIEW else "layout_report.html" %}
+{% extends "layout_report.html" %}
 
 {% block scripts_head %}
 <script src="/static/compare.js" async defer></script>
@@ -47,7 +47,6 @@
 {% block the_main %}
 <main id="dmg-done">
 <section id="compare-inputs">
-  {% if RUST_VIEW %}{% include "rust_report_nav.html" %}{% endif %}
   <select id="select-class">
     <option>Select class:</option>
     <option value="death-knight">Death Knight</option>

@@ -14,6 +14,9 @@ section {
   flex-direction: row;
   gap: .5rem;
 }
+#auras > section {
+  overflow-x: auto;
+}
 @media (orientation: landscape) {
   section > div {
     max-height: 80vh;
@@ -34,7 +37,7 @@ section {
 {% block the_main %}
 <main id="auras">
 <section>
-  {% for category, guids in ENTITIES.items() %}
+  {% for category, guids in (entity_groups if RUST_VIEW else ENTITIES.items()) %}
   <div>
   <table>
     <thead>
@@ -47,7 +50,7 @@ section {
       <tr>
         <td>
           {% if category == "PLAYERS" %}
-          <a href="/reports/{{ REPORT_ID }}/player/{{ name }}/{{ QUERY }}">{{ name }}</a>
+          <a class="{{ PLAYER_CLASSES[name] }}" href="/reports/{{ REPORT_ID }}/player/{{ name | urlencode }}/{{ QUERY }}">{{ name }}</a>
           {% else %}
           <a href="/reports/{{ REPORT_ID }}/player/{{ guid }}/{{ QUERY }}">{{ name }}</a>
           {% endif %}

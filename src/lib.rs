@@ -1,5 +1,6 @@
 pub mod absorbs;
 pub mod analysis;
+pub mod appearance;
 pub mod combat;
 pub mod compare;
 mod encounters;

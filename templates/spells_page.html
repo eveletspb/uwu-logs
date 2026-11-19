@@ -70,13 +70,13 @@ th > a {
             </tr>
           </thead>
           <tbody>
-            {% for player_name, targets in sources.items() %}
+            {% for player_name, targets in (SORTED_SOURCES[flag] if RUST_VIEW else sources.items()) %}
             <tr>
               <td class="player-cell">
                 <a class="{{ PLAYER_CLASSES[player_name] }}" href="/reports/{{ REPORT_ID }}/player/{{ player_name }}/{{ QUERY }}">{{ player_name }}</a>
               </td>
               {% for target_name in TARGETS %}
-              <td class="total-cell">{{ targets[target_name] }}</td>
+              <td class="total-cell">{{ targets[target_name]|default(0) }}</td>
               {% endfor %}
             </tr>
             {% endfor %}

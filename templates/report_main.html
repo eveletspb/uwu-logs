@@ -2,7 +2,7 @@
 
 {% block scripts_head %}
 <script src="/static/chart-4.1.2.min.js"></script>
-<script src="/static/report_main.js?v=240820-1" async></script>
+<script src="/static/report_main.js?v=240820-2" async></script>
 <script src="/static/dps_chart.js?261117-workspace" defer></script>
 {% endblock scripts_head %}
 
@@ -11,7 +11,7 @@
 {% endblock add_css_file %}
 
 {% block the_main %}
-<main id="report-main" data-duration="{{ DURATION }}">
+<main id="report-main" data-duration="{{ DURATION }}"{% if RUST_VIEW %} data-local{% endif %}>
   <div class="analysis-toolbar">
     <div class="metric-tabs" role="group" aria-label="Метрика">
       <button type="button" data-metric="all" aria-pressed="true">Сводка</button>
@@ -43,7 +43,7 @@
         </tr> 
       </thead>
       <tbody class="table-has-total">
-        {% for player_name, (spec_name, spec_icon) in SPECS.items() %}
+        {% for player_name, (spec_name, spec_icon) in (SPECS if RUST_VIEW else SPECS.items()) %}
         <tr>
           <td class="player-cell" title="{{ spec_name }}">
             <img src="/static/icons/{{ spec_icon }}.jpg">
@@ -55,7 +55,8 @@
           </td>
           <td class="points points-rank total-cell"></td>
           <td class="points points-dps total-cell"></td>
-          {% for _type, players in DATA.items() %}
+          {% for _type in (['useful', 'damage', 'heal', 'heal_total', 'taken'] if RUST_VIEW else DATA) %}
+          {% set players = DATA[_type] %}
           <td class="{{ _type }} rectangle-cell">
             {% if players.get(player_name) %}
             <div class="percent-bar" style="--width: {{ players.get(player_name, {})['percent'] }}%"></div>

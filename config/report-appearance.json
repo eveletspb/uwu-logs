@@ -1,0 +1,1220 @@
+{
+  "specs": {
+    "death-knight": [
+      [
+        "Death Knight",
+        "class_deathknight"
+      ],
+      [
+        "Blood Death Knight",
+        "spell_deathknight_bloodpresence"
+      ],
+      [
+        "Frost Death Knight",
+        "spell_deathknight_frostpresence"
+      ],
+      [
+        "Unholy Death Knight",
+        "spell_deathknight_unholypresence"
+      ]
+    ],
+    "druid": [
+      [
+        "Druid",
+        "class_druid"
+      ],
+      [
+        "Balance Druid",
+        "spell_nature_starfall"
+      ],
+      [
+        "Feral Combat Druid",
+        "ability_racial_bearform"
+      ],
+      [
+        "Restoration Druid",
+        "spell_nature_healingtouch"
+      ]
+    ],
+    "hunter": [
+      [
+        "Hunter",
+        "class_hunter"
+      ],
+      [
+        "Beast Mastery Hunter",
+        "ability_hunter_beasttaming"
+      ],
+      [
+        "Marksmanship Hunter",
+        "ability_marksmanship"
+      ],
+      [
+        "Survival Hunter",
+        "ability_hunter_swiftstrike"
+      ]
+    ],
+    "mage": [
+      [
+        "Mage",
+        "class_mage"
+      ],
+      [
+        "Arcane Mage",
+        "spell_holy_magicalsentry"
+      ],
+      [
+        "Fire Mage",
+        "spell_fire_firebolt02"
+      ],
+      [
+        "Frost Mage",
+        "spell_frost_frostbolt02"
+      ]
+    ],
+    "paladin": [
+      [
+        "Paladin",
+        "class_paladin"
+      ],
+      [
+        "Holy Paladin",
+        "spell_holy_holybolt"
+      ],
+      [
+        "Protection Paladin",
+        "spell_holy_devotionaura"
+      ],
+      [
+        "Retribution Paladin",
+        "spell_holy_auraoflight"
+      ]
+    ],
+    "priest": [
+      [
+        "Priest",
+        "class_priest"
+      ],
+      [
+        "Discipline Priest",
+        "spell_holy_wordfortitude"
+      ],
+      [
+        "Holy Priest",
+        "spell_holy_guardianspirit"
+      ],
+      [
+        "Shadow Priest",
+        "spell_shadow_shadowwordpain"
+      ]
+    ],
+    "rogue": [
+      [
+        "Rogue",
+        "class_rogue"
+      ],
+      [
+        "Assassination Rogue",
+        "ability_rogue_eviscerate"
+      ],
+      [
+        "Combat Rogue",
+        "ability_backstab"
+      ],
+      [
+        "Subtlety Rogue",
+        "ability_stealth"
+      ]
+    ],
+    "shaman": [
+      [
+        "Shaman",
+        "class_shaman"
+      ],
+      [
+        "Elemental Shaman",
+        "spell_nature_lightning"
+      ],
+      [
+        "Enhancement Shaman",
+        "spell_nature_lightningshield"
+      ],
+      [
+        "Restoration Shaman",
+        "spell_nature_magicimmunity"
+      ]
+    ],
+    "warlock": [
+      [
+        "Warlock",
+        "class_warlock"
+      ],
+      [
+        "Affliction Warlock",
+        "spell_shadow_deathcoil"
+      ],
+      [
+        "Demonology Warlock",
+        "spell_shadow_metamorphosis"
+      ],
+      [
+        "Destruction Warlock",
+        "spell_shadow_rainoffire"
+      ]
+    ],
+    "warrior": [
+      [
+        "Warrior",
+        "class_warrior"
+      ],
+      [
+        "Arms Warrior",
+        "ability_warrior_savageblow"
+      ],
+      [
+        "Fury Warrior",
+        "ability_warrior_innerrage"
+      ],
+      [
+        "Protection Warrior",
+        "ability_warrior_defensivestance"
+      ]
+    ]
+  },
+  "schools": {
+    "0x0": "",
+    "0x1": "physical",
+    "0x2": "holy",
+    "0x4": "fire",
+    "0x8": "nature",
+    "0x10": "frost",
+    "0x20": "shadow",
+    "0x40": "arcane",
+    "0x3": "holystrike",
+    "0x5": "flamestrike",
+    "0x6": "holyfire",
+    "0x9": "stormstrike",
+    "0xc": "firestorm",
+    "0x11": "froststrike",
+    "0x14": "frostfire",
+    "0x18": "froststorm",
+    "0x21": "shadowstrike",
+    "0x22": "shadowlight",
+    "0x28": "shadowstorm",
+    "0x30": "shadowfrost",
+    "0x42": "divine",
+    "0x44": "spellfire",
+    "0x50": "spellfrost",
+    "0x60": "spellshadow",
+    "0x7f": "chaos"
+  },
+  "useful_targets": [
+    "0027C8",
+    "002C74",
+    "002C76",
+    "002CEE",
+    "002D3F",
+    "002D8D",
+    "002D8E",
+    "002D8F",
+    "002D90",
+    "002D98",
+    "002ECD",
+    "002ECE",
+    "002ECF",
+    "002ED4",
+    "002EF1",
+    "002EF2",
+    "002F18",
+    "002F19",
+    "002F42",
+    "002F43",
+    "002F56",
+    "002F57",
+    "002FE3",
+    "002FE8",
+    "003093",
+    "0032DC",
+    "0036C4",
+    "0038AB",
+    "0038AD",
+    "0038AE",
+    "0038B3",
+    "0038B5",
+    "003909",
+    "0039F2",
+    "003B0A",
+    "003B9F",
+    "003BAB",
+    "003BAC",
+    "003BC3",
+    "003BEB",
+    "003BEC",
+    "003BED",
+    "003BF4",
+    "003C09",
+    "003C0A",
+    "003C95",
+    "003C96",
+    "003C97",
+    "003C9C",
+    "003C9D",
+    "003CB7",
+    "003CB8",
+    "003D47",
+    "003D48",
+    "003D49",
+    "003D4A",
+    "003D4B",
+    "003D6F",
+    "003E38",
+    "003E3B",
+    "003E3C",
+    "003E40",
+    "003E50",
+    "003E51",
+    "003E52",
+    "003E54",
+    "003E75",
+    "003E76",
+    "003E8B",
+    "003E9C",
+    "003EBC",
+    "003EBD",
+    "003EBF",
+    "003EC0",
+    "003EC1",
+    "003F17",
+    "003F18",
+    "003F33",
+    "003F34",
+    "003F35",
+    "003FA2",
+    "004049",
+    "004066",
+    "00408C",
+    "004255",
+    "004257",
+    "004258",
+    "00426F",
+    "004349",
+    "004369",
+    "004471",
+    "00447D",
+    "00447E",
+    "00447F",
+    "004487",
+    "00448A",
+    "00448B",
+    "00448C",
+    "004567",
+    "004590",
+    "0045B2",
+    "0045E0",
+    "004630",
+    "0046F8",
+    "004975",
+    "00498F",
+    "004990",
+    "004992",
+    "004993",
+    "004994",
+    "004A64",
+    "004C3A",
+    "004C3C",
+    "004CA6",
+    "004DA0",
+    "004DA1",
+    "004DA2",
+    "004DA3",
+    "004DA4",
+    "004E5C",
+    "004E5E",
+    "004E5F",
+    "004E60",
+    "0052DC",
+    "0052DD",
+    "0052DE",
+    "0052DF",
+    "0052E0",
+    "0052E1",
+    "005314",
+    "005315",
+    "005316",
+    "005317",
+    "005318",
+    "005319",
+    "00531A",
+    "005372",
+    "005374",
+    "005561",
+    "005573",
+    "005627",
+    "005628",
+    "005939",
+    "005957",
+    "005967",
+    "005972",
+    "005985",
+    "0059A3",
+    "0059A4",
+    "0059A5",
+    "0059A6",
+    "0059A7",
+    "0059A8",
+    "0059D5",
+    "005B7A",
+    "005B7B",
+    "005B7C",
+    "005C16",
+    "005C18",
+    "005C19",
+    "005C1A",
+    "005D37",
+    "005EAF",
+    "006112",
+    "006132",
+    "00613C",
+    "0061CE",
+    "00624D",
+    "00624E",
+    "0062E3",
+    "00639E",
+    "00646C",
+    "00648D",
+    "0064AC",
+    "0064C6",
+    "0064C7",
+    "0064E0",
+    "0064F0",
+    "0070BB",
+    "0070BC",
+    "0076F1",
+    "0076F3",
+    "0076F4",
+    "007755",
+    "007995",
+    "0079AA",
+    "007F23",
+    "00804D",
+    "008059",
+    "008061",
+    "008063",
+    "008067",
+    "00808A",
+    "008094",
+    "008096",
+    "008097",
+    "00809F",
+    "0080A2",
+    "0080A6",
+    "0080AA",
+    "0080BB",
+    "00815E",
+    "008170",
+    "008190",
+    "0081A2",
+    "0081B2",
+    "0081B3",
+    "0081CC",
+    "0081F7",
+    "008208",
+    "00820D",
+    "008231",
+    "00823F",
+    "008240",
+    "008242",
+    "008246",
+    "008298",
+    "008299",
+    "0082EB",
+    "0082F4",
+    "00831F",
+    "008373",
+    "008386",
+    "0083B4",
+    "0083B7",
+    "00842C",
+    "00843F",
+    "008462",
+    "008497",
+    "0084AE",
+    "0084BF",
+    "0084C1",
+    "0084C4",
+    "0084C9",
+    "0084D4",
+    "0084DE",
+    "008509",
+    "008563",
+    "008689",
+    "00868C",
+    "00868D",
+    "00868F",
+    "008690",
+    "008691",
+    "008692",
+    "008693",
+    "008695",
+    "008696",
+    "008697",
+    "008698",
+    "00869A",
+    "00869B",
+    "00869C",
+    "00869D",
+    "00869F",
+    "0086A1",
+    "0086A2",
+    "0086A3",
+    "0086A4",
+    "0086A5",
+    "0086A6",
+    "0086A7",
+    "0086A8",
+    "0086A9",
+    "0086AA",
+    "0086AB",
+    "0086C0",
+    "0086C1",
+    "0086C2",
+    "008704",
+    "00872D",
+    "00872F",
+    "0087DC",
+    "0087EC",
+    "0087ED",
+    "0087EF",
+    "0087F0",
+    "0087FD",
+    "0087FF",
+    "008809",
+    "00880A",
+    "0088C5",
+    "008948",
+    "008EF5",
+    "008F01",
+    "008F04",
+    "008F0B",
+    "008F12",
+    "008F13",
+    "008F19",
+    "008F46",
+    "008F5D",
+    "008FB5",
+    "008FB7",
+    "008FF5",
+    "008FF7",
+    "009074",
+    "0090FC",
+    "0090FD",
+    "00915F",
+    "0092A4",
+    "0092BA",
+    "009341",
+    "0093B5",
+    "0093E7",
+    "0093EC",
+    "0093FE",
+    "009402",
+    "009413",
+    "00942E",
+    "00943D",
+    "009443",
+    "009452",
+    "009454",
+    "009455",
+    "009621",
+    "009638",
+    "009655",
+    "00966C",
+    "009737",
+    "009738",
+    "009916",
+    "009B42",
+    "009B43",
+    "009B47",
+    "009BB7",
+    "009CCE",
+    "009CD2",
+    "009EE9",
+    "01ADB0",
+    "01ADB1",
+    "01ADB2",
+    "01ADB3",
+    "01ADB4",
+    "01ADBA",
+    "061A96",
+    "061A98",
+    "061A99",
+    "061AB1",
+    "061AB3",
+    "061AB4"
+  ],
+  "auras": {
+    "19753": {
+      "name": "Divine Intervention",
+      "icon": "spell_nature_timestop"
+    },
+    "57933": {
+      "name": "Tricks of the Trade",
+      "icon": "ability_rogue_tricksofthetrade"
+    },
+    "10060": {
+      "name": "Power Infusion",
+      "icon": "spell_holy_powerinfusion"
+    },
+    "49016": {
+      "name": "Hysteria",
+      "icon": "spell_deathknight_bladedarmor"
+    },
+    "23060": {
+      "name": "Battle Squawk",
+      "icon": "inv_misc_birdbeck_01"
+    },
+    "2825": {
+      "name": "Bloodlust",
+      "icon": "spell_nature_bloodlust"
+    },
+    "32182": {
+      "name": "Heroism",
+      "icon": "ability_shaman_heroism"
+    },
+    "54646": {
+      "name": "Focus Magic",
+      "icon": "spell_arcane_studentofmagic"
+    },
+    "29166": {
+      "name": "Innervate",
+      "icon": "spell_nature_lightning"
+    },
+    "63848": {
+      "name": "Hunger For Blood",
+      "icon": "ability_rogue_hungerforblood"
+    },
+    "58427": {
+      "name": "Overkill",
+      "icon": "ability_hunter_rapidkilling"
+    },
+    "54153": {
+      "name": "Judgements of the Pure",
+      "icon": "ability_paladin_judgementofthepure"
+    },
+    "51800": {
+      "name": "Might of Malygos",
+      "icon": "inv_misc_head_dragon_blue"
+    },
+    "51777": {
+      "name": "Arcane Focus",
+      "icon": "spell_arcane_teleportironforge"
+    },
+    "51605": {
+      "name": "Zeal",
+      "icon": "spell_shadow_shadowworddominate"
+    },
+    "44335": {
+      "name": "Energy Feedback",
+      "icon": "spell_arcane_arcane04"
+    },
+    "72553": {
+      "name": "Gastric Bloat",
+      "icon": "achievement_boss_festergutrotface"
+    },
+    "71531": {
+      "name": "Essence of the Blood Queen",
+      "icon": "ability_warlock_improvedsoulleech"
+    },
+    "67108": {
+      "name": "Nether Power",
+      "icon": "ability_mage_netherwindpresence"
+    },
+    "67215": {
+      "name": "Empowered Darkness",
+      "icon": "spell_shadow_darkritual"
+    },
+    "67218": {
+      "name": "Empowered Light",
+      "icon": "spell_holy_searinglightpriest"
+    },
+    "53908": {
+      "name": "Potion of Speed",
+      "icon": "inv_alchemy_elixir_04"
+    },
+    "53909": {
+      "name": "Potion of Wild Magic",
+      "icon": "inv_alchemy_elixir_01"
+    },
+    "28494": {
+      "name": "Insane Strength Potion",
+      "icon": "inv_potion_109"
+    },
+    "28507": {
+      "name": "Haste Potion",
+      "icon": "inv_potion_108"
+    },
+    "53762": {
+      "name": "Indestructible Potion",
+      "icon": "inv_alchemy_elixir_empty"
+    },
+    "28714": {
+      "name": "Flame Cap",
+      "icon": "inv_misc_herb_flamecap"
+    },
+    "54758": {
+      "name": "Hyperspeed Acceleration",
+      "icon": "spell_shaman_elementaloath"
+    },
+    "69065": {
+      "name": "Impaled",
+      "icon": "inv_misc_bone_03"
+    },
+    "71289": {
+      "name": "Dominate Mind",
+      "icon": "inv_belt_18"
+    },
+    "71237": {
+      "name": "Curse of Torpor",
+      "icon": "ability_creature_cursed_03"
+    },
+    "69279": {
+      "name": "Gas Spore",
+      "icon": "spell_shadow_creepingplague"
+    },
+    "72550": {
+      "name": "Malleable Goo",
+      "icon": "inv_misc_herb_evergreenmoss"
+    },
+    "73020": {
+      "name": "Vile Gas",
+      "icon": "ability_creature_cursed_01"
+    },
+    "73023": {
+      "name": "Mutated Infection",
+      "icon": "ability_creature_disease_02"
+    },
+    "74118": {
+      "name": "Ooze Variable",
+      "icon": "inv_inscription_inkgreen03"
+    },
+    "74119": {
+      "name": "Gas Variable",
+      "icon": "inv_inscription_inkorange01"
+    },
+    "72838": {
+      "name": "Volatile Ooze Adhesive",
+      "icon": "ability_warlock_chaosbolt"
+    },
+    "72833": {
+      "name": "Gaseous Bloat",
+      "icon": "spell_holiday_tow_spicecloud"
+    },
+    "72856": {
+      "name": "Unbound Plague",
+      "icon": "spell_shadow_corpseexplode"
+    },
+    "72620": {
+      "name": "Choking Gas",
+      "icon": "ability_creature_cursed_01"
+    },
+    "71265": {
+      "name": "Swarming Shadows",
+      "icon": "ability_rogue_shadowdance"
+    },
+    "71340": {
+      "name": "Pact of the Darkfallen",
+      "icon": "spell_shadow_destructivesoul"
+    },
+    "69762": {
+      "name": "Unchained Magic",
+      "icon": "spell_arcane_focusedpower"
+    },
+    "70157": {
+      "name": "Ice Tomb",
+      "icon": "spell_frost_frozencore"
+    },
+    "74297": {
+      "name": "Harvest Soul",
+      "icon": "spell_deathknight_strangulate"
+    },
+    "74795": {
+      "name": "Mark of Consumption",
+      "icon": "spell_shadow_sealofkings"
+    },
+    "74567": {
+      "name": "Mark of Combustion",
+      "icon": "spell_fire_sealoffire"
+    },
+    "67907": {
+      "name": "Mistress' Kiss",
+      "icon": "spell_shadow_soothingkiss"
+    },
+    "68125": {
+      "name": "Legion Flame",
+      "icon": "spell_fire_felimmolation"
+    },
+    "66283": {
+      "name": "Spinning Pain Spike",
+      "icon": "spell_shadow_shadowmend"
+    },
+    "74509": {
+      "name": "Repelling Wave",
+      "icon": "spell_fire_playingwithfire"
+    },
+    "74456": {
+      "name": "Conflagration",
+      "icon": "inv_misc_orb_05"
+    },
+    "74384": {
+      "name": "Intimidating Roar",
+      "icon": "ability_golemthunderclap"
+    },
+    "74531": {
+      "name": "Tail Lash",
+      "icon": "ability_criticalstrike"
+    }
+  },
+  "aura_aliases": {
+    "70879": "71531",
+    "71530": "71531",
+    "71525": "71531",
+    "71531": "71531",
+    "70867": "71531",
+    "71532": "71531",
+    "71473": "71531",
+    "71533": "71531",
+    "70871": "71531",
+    "70949": "71531",
+    "72297": "72550",
+    "72549": "72550",
+    "72548": "72550",
+    "72550": "72550",
+    "70853": "72550",
+    "72873": "72550",
+    "72458": "72550",
+    "72874": "72550",
+    "69240": "73020",
+    "73019": "73020",
+    "71218": "73020",
+    "73020": "73020",
+    "72272": "73020",
+    "72273": "73020",
+    "69674": "73023",
+    "73022": "73023",
+    "71224": "73023",
+    "73023": "73023",
+    "70447": "72838",
+    "72837": "72838",
+    "72836": "72838",
+    "72838": "72838",
+    "70672": "72833",
+    "72832": "72833",
+    "72455": "72833",
+    "72833": "72833",
+    "71278": "72620",
+    "72619": "72620",
+    "72460": "72620",
+    "72620": "72620",
+    "71279": "72620",
+    "72621": "72620",
+    "72459": "72620",
+    "72622": "72620",
+    "70911": "72856",
+    "72855": "72856",
+    "72854": "72856",
+    "72856": "72856",
+    "68980": "74297",
+    "74296": "74297",
+    "74325": "74297",
+    "74297": "74297",
+    "66197": "68125",
+    "68124": "68125",
+    "68123": "68125",
+    "68125": "68125",
+    "66334": "67907",
+    "67906": "67907",
+    "67905": "67907",
+    "67907": "67907"
+  },
+  "short_auras": [
+    "19753"
+  ],
+  "items": {
+    "53908": {
+      "name": "Potion of Speed",
+      "icon": "inv_alchemy_elixir_04"
+    },
+    "53909": {
+      "name": "Potion of Wild Magic",
+      "icon": "inv_alchemy_elixir_01"
+    },
+    "28494": {
+      "name": "Insane Strength Potion",
+      "icon": "inv_potion_109"
+    },
+    "28507": {
+      "name": "Haste Potion",
+      "icon": "inv_potion_108"
+    },
+    "28508": {
+      "name": "Destruction Potion",
+      "icon": "inv_potion_107"
+    },
+    "28714": {
+      "name": "Flame Cap",
+      "icon": "inv_misc_herb_flamecap"
+    },
+    "43186": {
+      "name": "Runic Mana Potion",
+      "icon": "inv_alchemy_elixir_02"
+    },
+    "54758": {
+      "name": "Hyperspeed Acceleration",
+      "icon": "spell_shaman_elementaloath"
+    },
+    "56350": {
+      "name": "Saronite Bomb",
+      "icon": "inv_misc_enggizmos_32"
+    },
+    "56488": {
+      "name": "Global Thermal Sapper Charge",
+      "icon": "inv_gizmo_supersappercharge"
+    },
+    "13241": {
+      "name": "Goblin Sapper Charge",
+      "icon": "spell_fire_selfdestruct"
+    },
+    "30486": {
+      "name": "Super Sapper Charge",
+      "icon": "inv_gizmo_supersappercharge"
+    },
+    "9512": {
+      "name": "Thistle Tea",
+      "icon": "inv_drink_milk_05"
+    },
+    "53762": {
+      "name": "Indestructible Potion",
+      "icon": "inv_alchemy_elixir_empty"
+    },
+    "53750": {
+      "name": "Crazy Alchemist's Potion",
+      "icon": "inv_potion_27"
+    },
+    "28499": {
+      "name": "Endless Mana Potion",
+      "icon": "inv_alchemy_endlessflask_04"
+    },
+    "43185": {
+      "name": "Healing Potion",
+      "icon": "inv_alchemy_elixir_05"
+    }
+  },
+  "spec_book": {
+    "death-knight": {
+      "49016": 1,
+      "55233": 1,
+      "49005": 1,
+      "48982": 1,
+      "50449": 1,
+      "70654": 1,
+      "55268": 2,
+      "51271": 2,
+      "51411": 2,
+      "50401": 2,
+      "49206": 3,
+      "55271": 3,
+      "50526": 3,
+      "51735": 3,
+      "66803": 3
+    },
+    "druid": {
+      "60433": 1,
+      "27013": 1,
+      "48468": 1,
+      "48518": 1,
+      "48517": 1,
+      "33831": 1,
+      "53195": 1,
+      "53227": 1,
+      "24907": 1,
+      "50213": 2,
+      "62078": 2,
+      "48572": 2,
+      "52610": 2,
+      "62606": 2,
+      "49800": 2,
+      "48574": 2,
+      "33987": 2,
+      "48566": 2,
+      "51178": 2,
+      "17099": 2,
+      "48577": 2,
+      "49376": 2,
+      "17392": 2,
+      "16857": 2,
+      "47468": 2,
+      "17116": 3,
+      "53251": 3,
+      "48542": 3,
+      "34123": 3,
+      "18562": 3,
+      "48504": 3
+    },
+    "hunter": {
+      "19574": 1,
+      "19577": 1,
+      "34471": 1,
+      "53257": 1,
+      "57475": 1,
+      "34456": 1,
+      "75447": 1,
+      "20904": 2,
+      "20906": 2,
+      "53220": 2,
+      "53209": 2,
+      "53353": 2,
+      "23989": 2,
+      "63468": 2,
+      "53301": 3,
+      "60051": 3,
+      "60052": 3,
+      "60053": 3,
+      "34501": 3
+    },
+    "mage": {
+      "12043": 1,
+      "44781": 1,
+      "12042": 1,
+      "44401": 1,
+      "12654": 2,
+      "55360": 2,
+      "48108": 2,
+      "28682": 2,
+      "12579": 3,
+      "31687": 3,
+      "44572": 3
+    },
+    "paladin": {
+      "53652": 1,
+      "53654": 1,
+      "25903": 1,
+      "48825": 1,
+      "54149": 1,
+      "31834": 1,
+      "31842": 1,
+      "20216": 1,
+      "53595": 2,
+      "66233": 2,
+      "32700": 2,
+      "48827": 2,
+      "20132": 2,
+      "20925": 2,
+      "27179": 2,
+      "48952": 2,
+      "70760": 2,
+      "59578": 3,
+      "35395": 3,
+      "53385": 3,
+      "54203": 3
+    },
+    "priest": {
+      "47755": 1,
+      "52985": 1,
+      "47753": 1,
+      "59891": 1,
+      "10060": 1,
+      "63730": 2,
+      "63731": 2,
+      "63733": 2,
+      "63734": 2,
+      "63735": 2,
+      "63737": 2,
+      "63544": 2,
+      "63725": 2,
+      "34864": 2,
+      "34866": 2,
+      "48089": 2,
+      "47788": 2,
+      "27827": 2,
+      "34754": 2,
+      "34917": 3,
+      "48160": 3,
+      "63675": 3,
+      "33198": 3,
+      "33200": 3,
+      "61792": 3,
+      "15290": 3,
+      "15473": 3,
+      "47585": 3
+    },
+    "rogue": {
+      "57993": 1,
+      "48666": 1,
+      "11294": 2,
+      "48638": 2,
+      "13750": 2,
+      "13877": 2,
+      "51690": 2,
+      "51713": 3,
+      "36554": 3,
+      "14183": 3,
+      "14185": 3,
+      "48660": 3
+    },
+    "shaman": {
+      "30706": 1,
+      "57722": 1,
+      "59159": 1,
+      "16166": 1,
+      "45296": 1,
+      "49240": 1,
+      "49269": 1,
+      "60103": 2,
+      "51533": 2,
+      "30823": 2,
+      "17364": 2,
+      "70829": 2,
+      "379": 3,
+      "53390": 3,
+      "52752": 3,
+      "17359": 3,
+      "16190": 3,
+      "51886": 3,
+      "16188": 3,
+      "16237": 3
+    },
+    "warlock": {
+      "59161": 1,
+      "59164": 1,
+      "30405": 1,
+      "47843": 1,
+      "64368": 1,
+      "64371": 1,
+      "18265": 1,
+      "30911": 1,
+      "32388": 1,
+      "32391": 1,
+      "71165": 2,
+      "47241": 2,
+      "63167": 2,
+      "47193": 2,
+      "32553": 2,
+      "59172": 3,
+      "47847": 3,
+      "17962": 3,
+      "30912": 3,
+      "30294": 3
+    },
+    "warrior": {
+      "7384": 1,
+      "12294": 1,
+      "47485": 1,
+      "47486": 1,
+      "30330": 1,
+      "25248": 1,
+      "21551": 1,
+      "21552": 1,
+      "21553": 1,
+      "52437": 1,
+      "60503": 1,
+      "46924": 1,
+      "25251": 2,
+      "23881": 2,
+      "23894": 2,
+      "30335": 2,
+      "30033": 2,
+      "46968": 3,
+      "30016": 3,
+      "30022": 3,
+      "47498": 3
+    }
+  },
+  "item_order": [
+    "53908",
+    "53909",
+    "28494",
+    "28507",
+    "28508",
+    "28714",
+    "43186",
+    "54758",
+    "56350",
+    "56488",
+    "13241",
+    "30486",
+    "9512",
+    "53762",
+    "53750",
+    "28499",
+    "43185"
+  ],
+  "item_aliases": {
+    "67490": "43186",
+    "67489": "43185"
+  },
+  "counted_items": [
+    "28494",
+    "28507",
+    "28508",
+    "28714",
+    "43186",
+    "53908",
+    "53909"
+  ],
+  "aura_order": [
+    "19753",
+    "57933",
+    "10060",
+    "49016",
+    "23060",
+    "2825",
+    "32182",
+    "54646",
+    "29166",
+    "63848",
+    "58427",
+    "54153",
+    "51800",
+    "51777",
+    "51605",
+    "44335",
+    "72553",
+    "71531",
+    "67108",
+    "67215",
+    "67218",
+    "53908",
+    "53909",
+    "28494",
+    "28507",
+    "53762",
+    "28714",
+    "54758",
+    "69065",
+    "71289",
+    "71237",
+    "69279",
+    "72550",
+    "73020",
+    "73023",
+    "74118",
+    "74119",
+    "72838",
+    "72833",
+    "72856",
+    "72620",
+    "71265",
+    "71340",
+    "69762",
+    "70157",
+    "74297",
+    "74795",
+    "74567",
+    "67907",
+    "68125",
+    "66283",
+    "74509",
+    "74456",
+    "74384",
+    "74531"
+  ]
+}

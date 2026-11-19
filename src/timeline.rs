@@ -3,7 +3,6 @@ use crate::reports::{Encounter, Report};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
-use std::sync::LazyLock;
 
 #[derive(Serialize)]
 struct Spell {
@@ -23,10 +22,6 @@ pub struct Timeline {
     name: String,
     class: String,
 }
-
-static ICONS: LazyLock<BTreeMap<&'static str, &'static str>> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../static/aura_icons.json")).expect("bundled aura icons")
-});
 
 pub fn build(report: &mut Report, encounter: &Encounter, name: &str) -> io::Result<Timeline> {
     let Some((guid, unit)) = report
@@ -93,7 +88,7 @@ pub fn build(report: &mut Report, encounter: &Encounter, name: &str) -> io::Resu
                 event.spell.into(),
                 Spell {
                     name: event.spell_name.into(),
-                    icon: ICONS.get(event.spell).copied(),
+                    icon: Some(crate::appearance::spell_icon(event.spell)),
                 },
             );
         }

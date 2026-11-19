@@ -138,7 +138,7 @@ function init() {
     table_sort_by_th(document.querySelector(`.${TOTAL["useful"]}.sortable`));
   }
 
-  send_ranks_request();
+  if (!document.getElementById("report-main").hasAttribute("data-local")) send_ranks_request();
 
   document.querySelectorAll(".swap-damage").forEach(button => button.addEventListener("click", swap_click_wrap("useful")));
   document.querySelectorAll(".swap-heal").forEach(button => button.addEventListener("click", swap_click_wrap("heal")));

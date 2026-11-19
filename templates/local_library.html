@@ -5,7 +5,7 @@
 <section class="summary-grid" aria-label="Сводка библиотеки">
   <div class="summary-tile"><div class="summary-label">Сохранённые отчёты</div><div class="summary-value">{{ LOCAL_REPORTS|length }}</div>{% if not RUST_VIEW %}<div class="summary-detail">За последние 30 дней</div>{% endif %}</div>
   <div class="summary-tile"><div class="summary-label">Запись боёв</div><div class="summary-value">Только боссы</div><div class="summary-detail">DBM · убийства и вайпы</div></div>
-  {% if not RUST_VIEW %}<div class="summary-tile"><div class="summary-label">Хранение</div><div class="summary-value">30 дней</div><div class="summary-detail">Автоматическая очистка</div></div>{% endif %}
+  <div class="summary-tile"><div class="summary-label">Хранение</div><div class="summary-value">{{ "Локально" if RUST_VIEW else "30 дней" }}</div><div class="summary-detail">{{ "Отчёты сохраняются" if RUST_VIEW else "Автоматическая очистка" }}</div></div>
 </section>
 <h2 class="section-heading">Последние рейды {% if not RUST_VIEW %}<small>Автоимпорт после закрытия WoW</small>{% endif %}</h2>
 {% if LOCAL_REPORTS %}

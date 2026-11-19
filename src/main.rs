@@ -1,4 +1,7 @@
 mod auto_import;
+mod player_view;
+mod report_view;
+mod section_view;
 mod upload;
 
 use axum::body::Body;
@@ -8,7 +11,7 @@ use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::{Json, Router, routing::get};
 use minijinja::{Environment, context, path_loader};
 use raidledger::combat::CATALOG;
-use raidledger::metrics::{aggregate, player_spells};
+use raidledger::metrics::aggregate;
 use raidledger::reports::{Encounter, LegacyGroups, Report, import_capture, list_ids};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -85,9 +88,15 @@ struct LibraryRow {
     fights: String,
     progress: String,
     progress_note: &'static str,
+    #[serde(skip)]
+    matched: bool,
 }
 
-fn library_row(report: Report, snapshots: Option<&auto_import::SavedProgress>) -> LibraryRow {
+fn library_row(
+    report: Report,
+    snapshots: Option<&auto_import::SavedProgress>,
+    query: &LibraryQuery,
+) -> LibraryRow {
     let fields = report.id.splitn(4, "--").collect::<Vec<_>>();
     let year = report.id[..2].parse::<u32>().unwrap_or(0) + 2000;
     let date = format!("{year}{}", fields[0].get(2..).unwrap_or(""));
@@ -141,7 +150,23 @@ fn library_row(report: Report, snapshots: Option<&auto_import::SavedProgress>) -
     } else {
         ("—".to_owned(), "Рейд не определён")
     };
+    let text_matches = |filter: &Option<String>, value: &str| {
+        filter
+            .as_deref()
+            .is_none_or(|filter| filter.is_empty() || value.eq_ignore_ascii_case(filter))
+    };
+    let matched = text_matches(&query.author, fields[2])
+        && text_matches(&query.server, fields[3])
+        && (query.player.as_deref().is_none_or(str::is_empty)
+            || report
+                .metadata
+                .players
+                .values()
+                .any(|name| text_matches(&query.player, name)))
+        && (query.fight.as_deref().is_none_or(str::is_empty)
+            || fights.iter().any(|boss| text_matches(&query.fight, boss)));
     LibraryRow {
+        matched,
         author: fields[2].into(),
         server: fields[3].into(),
         date: date.clone(),
@@ -163,6 +188,9 @@ struct LibraryQuery {
     server: Option<String>,
     year: Option<u32>,
     month: Option<u32>,
+    author: Option<String>,
+    player: Option<String>,
+    fight: Option<String>,
 }
 
 async fn library(
@@ -183,15 +211,8 @@ async fn library(
             if let Some((_, realm)) = id.rsplit_once("--") {
                 realms.insert(realm.to_owned());
             }
-            if query
-                .server
-                .as_ref()
-                .is_some_and(|server| !server.is_empty() && !id.ends_with(&format!("--{server}")))
-            {
-                continue;
-            }
             match Report::open_group(&app.root, &id, &app.legacy_groups) {
-                Ok(report) => rows.push(library_row(report, snapshots.as_ref())),
+                Ok(report) => rows.push(library_row(report, snapshots.as_ref(), &query)),
                 Err(error) => eprintln!("Cannot open {id}: {error}"),
             }
         }
@@ -314,10 +335,80 @@ fn render_calendar(
         "Ноябрь",
         "Декабрь",
     ];
+    let calendar_month = |year, month| {
+        let elapsed = (2000..year)
+            .flat_map(|year| (1..=12).map(move |month| days_in_month(year, month)))
+            .sum::<u32>()
+            + (1..month + 1)
+                .map(|month| days_in_month(year, month))
+                .sum::<u32>();
+        let start = (elapsed + 5) % 7;
+        let days = days_in_month(year, month + 1);
+        let previous = (month + 11) % 12;
+        let previous_days = days_in_month(if month == 0 { year - 1 } else { year }, previous + 1);
+        let size = (start + days).div_ceil(7) * 7;
+        (0..size)
+            .map(|position| {
+                let (month, day) = if position < start {
+                    (previous, previous_days + position + 1 - start)
+                } else if position >= start + days {
+                    ((month + 1) % 12, position + 1 - start - days)
+                } else {
+                    (month, position + 1 - start)
+                };
+                (format!("{:02}-{day:02}", month + 1), day)
+            })
+            .collect::<Vec<_>>()
+            .chunks(7)
+            .map(<[_]>::to_vec)
+            .collect::<Vec<_>>()
+    };
+    if path == "/logs_list" {
+        let mut weeks = calendar_month(year, month);
+        let last_month = (month + 11) % 12;
+        let last_year = if month == 0 { year - 1 } else { year };
+        let previous = calendar_month(last_year, last_month);
+        if let Some(week) = previous
+            .iter()
+            .rev()
+            .find(|week| Some(*week) != weeks.first())
+        {
+            weeks.insert(0, week.clone());
+        }
+        let allowed = [
+            format!("{year}-{:02}-", month + 1),
+            format!("{last_year}-{:02}-", last_month + 1),
+        ];
+        let mut days = std::collections::BTreeMap::<_, Vec<_>>::new();
+        for row in reports
+            .iter()
+            .rev()
+            .filter(|row| row.matched && allowed.iter().any(|prefix| row.date.starts_with(prefix)))
+        {
+            days.entry(&row.date[5..])
+                .or_default()
+                .push((&row.id, format!("{} · {}", row.time, row.raid_label)));
+        }
+        let fights = CATALOG
+            .bosses
+            .values()
+            .collect::<std::collections::BTreeSet<_>>();
+        return app.render(
+            "logs_list.html",
+            context! {
+                request => context! { path }, MONTH => days, CALEND => weeks,
+                LOCAL_REPORTS => reports, CURRENT_YEAR => year, CURRENT_MONTH => month,
+                CURRENT_SERVER => query.server.as_deref().unwrap_or_default(),
+                MONTHS => MONTH_NAMES.into_iter().enumerate().collect::<Vec<_>>(),
+                YEARS => (2018..=year.max(default_year) + 1).collect::<Vec<_>>(),
+                SERVERS => realms, ALL_FIGHT_NAMES => fights,
+            },
+        );
+    }
     let selected = format!("{year}-{:02}-", month + 1);
     let reports = reports
         .into_iter()
-        .filter(|report| report.date.starts_with(&selected))
+        .filter(|report| report.matched && report.date.starts_with(&selected))
         .collect::<Vec<_>>();
     let days = (2000..year)
         .flat_map(|year| (1..=12).map(move |month| days_in_month(year, month)))
@@ -355,6 +446,7 @@ struct ReportQuery {
     boss: Option<String>,
     mode: Option<String>,
     attempt: Option<String>,
+    target: Option<String>,
     #[serde(default, deserialize_with = "query_number")]
     s: Option<u64>,
     #[serde(default, deserialize_with = "query_number")]
@@ -386,9 +478,13 @@ fn select(report: &mut Report, query: &ReportQuery) -> io::Result<Vec<Encounter>
         .boss
         .as_deref()
         .is_none_or(|value| value.is_empty() || value == "custom")
-        && let (Some(start), Some(end)) = (query.s, query.f)
     {
-        return Ok(report.time_slice(start..end)?.into_iter().collect());
+        if let (Some(start), Some(end)) = (query.s, query.f) {
+            return Ok(report.time_slice(start..end)?.into_iter().collect());
+        }
+        if !report.has_lockout() {
+            return Ok(report.whole_log()?.into_iter().collect());
+        }
     }
     let attempt = query.attempt.as_deref().unwrap_or_default();
     let number = attempt.parse::<usize>().ok();
@@ -438,30 +534,18 @@ async fn report_page(
     OriginalUri(uri): OriginalUri,
     Query(query): Query<ReportQuery>,
 ) -> Result<Html<String>, Error> {
-    let path = uri.path().to_owned();
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
         let selected = select(&mut report, &query)?;
-        let mechanics = [
-            ("the-lich-king", "valks", "Валь’киры Короля-лича"),
-            ("lady-deathwhisper", "lady_spirits", "Мстительные тени"),
-            ("sindragosa", "ucm", "Нестабильность Синдрагосы"),
-            ("twin-valkyr", "toc_valks", "Щиты близнецов-валь’кир"),
-        ].into_iter().filter(|(boss, _, _)| selected.iter().any(|fight| fight.boss_slug == *boss))
-            .map(|(_, route, title)| context! { route, title }).collect::<Vec<_>>();
-
         let summary = aggregate(&mut report, &selected)?;
-        let mut players = summary.players.into_values().collect::<Vec<_>>();
-        players.sort_by_key(|player| std::cmp::Reverse(player.rates.totals.damage));
-        let encounter_links = report.metadata.encounters.iter().map(|encounter| context! {
-            boss => &encounter.boss, outcome => &encounter.outcome, difficulty => &encounter.difficulty,
-            duration => encounter.duration_seconds, query => encounter.query()
-        }).collect::<Vec<_>>();
-        app.render("rust_report.html", context! {
-            request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id,
-            encounters => encounter_links, players, mechanics, totals => summary.totals, duration => summary.duration_seconds, query => uri.query().map(|query| format!("?{query}")).unwrap_or_default(),
-        })
-    }).await
+        let specific = query.boss.as_deref().is_some_and(|boss| boss != "all");
+        let table = report_view::overview(&mut report, &selected, specific, summary)?;
+        app.render(
+            "report_main.html",
+            context! { ..report_view::context(&report, &id, &selected, &query, &uri), ..table },
+        )
+    })
+    .await
 }
 
 async fn spell_page(
@@ -476,30 +560,26 @@ async fn spell_page(
     ) {
         return Err(Error(StatusCode::NOT_FOUND, "Unknown report view"));
     }
-    let path = uri.path().to_owned();
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        let selected = select(&mut report, &query)?;
+        let common = report_view::context(&report, &id, &selected, &query, &uri);
         if view == "casts" {
-            let encounters = report.metadata.encounters.iter().map(|encounter| context! {
-                boss => &encounter.boss, outcome => &encounter.outcome, difficulty => &encounter.difficulty,
-                duration => encounter.duration_seconds, query => encounter.query()
-            }).collect::<Vec<_>>();
-            return app.render("timeline.html", context! {
-                request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id,
-                SOURCE_NAME => &player, QUERY => uri.query().map(|query| format!("?{query}")).unwrap_or_default(),
-                RUST_TIMELINE => true, encounters,
-            });
+            return app.render(
+                "timeline.html",
+                context! { SOURCE_NAME => &player, ..common },
+            );
         }
-
-        let windows = select(&mut report, &query)?.into_iter().map(|encounter| encounter.start..encounter.end).collect::<Vec<_>>();
-        let received_only = view == "healed";
-        let mut spells = player_spells(&mut report, &windows, &player, received_only)?.into_iter().collect::<Vec<_>>();
-        spells.sort_by_key(|(_, spell)| std::cmp::Reverse(match view.as_str() {
-            "heal" => spell.healing, "healed" => spell.received_healing, "taken" => spell.taken, _ => spell.damage,
-        }));
-        app.render("rust_player.html", context! { request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id, player, spells,
-            received_only, query => uri.query().map(|query| format!("?{query}")).unwrap_or_default() })
-    }).await
+        let detail = player_view::breakdown(
+            &mut report,
+            &selected,
+            &player,
+            &view,
+            query.target.as_deref(),
+        )?;
+        app.render("dmg_done2.html", context! { ..common, ..detail })
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -586,56 +666,61 @@ async fn render_section(
     uri: axum::http::Uri,
     query: ReportQuery,
 ) -> Result<Html<String>, Error> {
-    let path = uri.path().to_owned();
     blocking(move || {
-        use raidledger::analysis::{self, View};
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
         let selected = select(&mut report, &query)?;
-        let query = uri
-            .query()
-            .map(|query| format!("?{query}"))
-            .unwrap_or_default();
-        let mechanic = match section.as_str() {
-            "valks" => Some(("the-lich-king", "Валь’киры Короля-лича")),
-            "lady_spirits" => Some(("lady-deathwhisper", "Мстительные тени")),
-            "ucm" => Some(("sindragosa", "Нестабильность Синдрагосы")),
-            "toc_valks" => Some(("twin-valkyr", "Щиты близнецов-валь’кир")),
+        let common = report_view::context(&report, &id, &selected, &query, &uri);
+        let boss = match section.as_str() {
+            "valks" => Some("the-lich-king"),
+            "lady_spirits" => Some("lady-deathwhisper"),
+            "ucm" => Some("sindragosa"),
+            "toc_valks" => Some("twin-valkyr"),
             _ => None,
         };
-        if let Some((boss, heading)) = mechanic {
-            let relevant = report.metadata.encounters.iter().filter(|fight| fight.boss_slug == boss)
-                .map(|fight| context! { query => fight.query(), label => format!("Попытка {}", fight.attempt + 1) }).collect::<Vec<_>>();
-            let tables = raidledger::mechanics::analyze(&mut report, &selected.into_iter()
-                .filter(|fight| fight.boss_slug == boss).collect::<Vec<_>>(), &section)?;
-            return app.render("raid_mechanics.html", context! {
-                request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id, query, heading, tables, relevant,
-            });
-        }
-        let view =
-            match section.as_str() {
-                "deaths" => return app.render(
-                    "rust_deaths.html",
-                    context! {
-                        request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id, query,
-                        deaths => analysis::deaths(&mut report, &selected)?
-                    },
-                ),
-                "damage" => View::Targets,
-                "all_auras" => View::Auras,
-                "consumables" => View::Consumables,
-                "powers" => View::Resources,
-                "entities" => View::Units,
-                "spell" => View::Spell(spell.as_deref().unwrap_or_default()),
-                _ => return Err(Error(StatusCode::NOT_FOUND, "Unknown report section")),
+        if let Some(boss) = boss {
+            let fights = if query.boss.is_none() {
+                report
+                    .metadata
+                    .encounters
+                    .iter()
+                    .filter(|fight| fight.boss_slug == boss)
+                    .cloned()
+                    .collect::<Vec<_>>()
+            } else {
+                selected
+                    .into_iter()
+                    .filter(|fight| fight.boss_slug == boss)
+                    .collect::<Vec<_>>()
             };
-        let (heading, label, metric) = view.labels();
-        app.render(
-            "rust_section.html",
-            context! {
-                request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id, query,
-                heading, label, metric, rows => analysis::inspect(&mut report, &selected, view)?
-            },
-        )
+            let (template, details) = section_view::special(&mut report, &fights, &section)?;
+            return app.render(template, context! { ..common, ..details });
+        }
+        let (template, details) = match section.as_str() {
+            "deaths" => ("deaths.html", section_view::deaths(&mut report, &selected)?),
+            "damage" => (
+                "damage_target.html",
+                section_view::damage(&mut report, &selected)?,
+            ),
+            "all_auras" => (
+                "all_auras.html",
+                section_view::auras(&mut report, &selected)?,
+            ),
+            "consumables" => (
+                "consumables.html",
+                section_view::consumables(&mut report, &selected)?,
+            ),
+            "powers" => ("powers.html", section_view::powers(&mut report, &selected)?),
+            "entities" => (
+                "entities.html",
+                section_view::entities(&mut report, &selected)?,
+            ),
+            "spell" => (
+                "spells_page.html",
+                section_view::spells(&mut report, &selected, spell.as_deref().unwrap_or_default())?,
+            ),
+            _ => return Err(Error(StatusCode::NOT_FOUND, "Unknown report section")),
+        };
+        app.render(template, context! { ..common, ..details })
     })
     .await
 }
@@ -735,15 +820,14 @@ async fn compare_page(
     State(app): State<App>,
     UrlPath(id): UrlPath<String>,
     OriginalUri(uri): OriginalUri,
+    Query(query): Query<ReportQuery>,
 ) -> Result<Html<String>, Error> {
     blocking(move || {
-        Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        let selected = select(&mut report, &query)?;
         app.render(
             "compare.html",
-            context! {
-                request => context! { path => uri.path() }, REPORT_ID => &id, REPORT_NAME => &id,
-                query => uri.query().map(|query| format!("?{query}")).unwrap_or_default(),
-            },
+            report_view::context(&report, &id, &selected, &query, &uri),
         )
     })
     .await
@@ -928,6 +1012,7 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     let mut templates = Environment::new();
     templates.set_loader(path_loader(assets.join("templates")));
     templates.add_filter("urlencode", path_segment);
+    report_view::configure_templates(&mut templates);
     templates.add_global("RUST_VIEW", minijinja::Value::from(true));
     let root = root.canonicalize()?;
     let address = app_env("RAIDLEDGER_BIND", "UWU_BIND")

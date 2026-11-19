@@ -25,7 +25,8 @@ button:hover {
 }
 #target-select-wrap select {
   margin-left: 1rem;
-  min-width: 22ch;
+  min-width: min(22ch, 100%);
+  max-width: 100%;
 }
 #target-select-wrap button,
 #target-select-wrap select {
@@ -225,7 +226,7 @@ option {
   </section>
 </section>
 <section id="dmg-done-main" class="table-wrap table-spells">
-  {% if SPELLS_DATA %}
+  {% if (spell_rows if RUST_VIEW else SPELLS_DATA) %}
     <table>
       <thead>
         <tr>
@@ -253,35 +254,35 @@ option {
         </tr>
       </thead>
       <tbody>
-        {% for spell_id, spell_data in SPELLS_DATA.items() %} 
+        {% for spell_id, spell_data in (spell_rows if RUST_VIEW else SPELLS_DATA.items()) %}
         <tr>
           <td class="spell-name">
             <img src="/static/icons/{{ spell_data['icon'] }}.jpg">
             <a class="{{ spell_data['color'] }}" href="/reports/{{ REPORT_ID }}/spell/{{ spell_data['id'] }}/{{ QUERY }}">{{ spell_data['name'] }}</a>
           </td>
-          <td class="count">{{ ACTUAL_PERCENT[spell_id] }}</td>
-          <td class="total-cell border">{{ ACTUAL[spell_id] }}</td>
-          <td class="count">{{ REDUCED_PERCENT[spell_id] }}</td>
-          <td class="total-cell border has-tooltip">{{ REDUCED[spell_id] }}
-            {% if REDUCED_DETAILED[spell_id] %}
+          <td class="count">{{ spell_data.actual_percent if RUST_VIEW else ACTUAL_PERCENT[spell_id] }}</td>
+          <td class="total-cell border">{{ spell_data.actual if RUST_VIEW else ACTUAL[spell_id] }}</td>
+          <td class="count">{{ spell_data.reduced_percent if RUST_VIEW else REDUCED_PERCENT[spell_id] }}</td>
+          <td class="total-cell border has-tooltip">{{ spell_data.reduced if RUST_VIEW else REDUCED[spell_id] }}
+            {% set details = spell_data.reduced_details if RUST_VIEW else REDUCED_DETAILED[spell_id] %}{% if details %}
             <table class="tooltip table-details">
-              {% for category, amount in REDUCED_DETAILED[spell_id].items() %}
+              {% for category, amount in details.items() %}
               <tr><td>{{ category }}</td><td>{{ amount }}</td></tr>
               {% endfor %}
             </table>
             {% endif %}
           </td>
-          <td class="count-small">{{ CASTS[spell_id] }}</td>
-          <td class="count-small border has-tooltip">{{ MISSES[spell_id] }}
-            {% if MISS_DETAILED[spell_id] %}
+          <td class="count-small">{{ spell_data.casts if RUST_VIEW else CASTS[spell_id] }}</td>
+          <td class="count-small border has-tooltip">{{ spell_data.misses if RUST_VIEW else MISSES[spell_id] }}
+            {% set details = spell_data.miss_details if RUST_VIEW else MISS_DETAILED[spell_id] %}{% if details %}
             <table class="tooltip table-details">
-              {% for category, amount in MISS_DETAILED[spell_id].items() %}
+              {% for category, amount in details.items() %}
               <tr><td>{{ category }}</td><td>{{ amount }}</td></tr>
               {% endfor %}
             </table>
             {% endif %}
           </td>
-          {% for _type, _data in HITS.get(spell_id, {}).items() %} 
+          {% for _data in (spell_data.hits if RUST_VIEW else HITS.get(spell_id, {}).values()) %}
           <td class="count-small border-thin">{{ _data['total'] }}</td>
           <td class="count-small">{{ _data['hits'] }}</td>
           <td class="count border-thin has-tooltip">{{ _data['hit_avg'] }}
@@ -313,9 +314,9 @@ option {
         <tr>
           <td class="spell-name">Total</td>
           <td></td>
-          <td class="border">{{ ACTUAL["Total"] }}</td>
+          <td class="border">{{ actual_total if RUST_VIEW else ACTUAL["Total"] }}</td>
           <td></td>
-          <td class="border">{{ REDUCED["Total"] }}</td>
+          <td class="border">{{ reduced_total if RUST_VIEW else REDUCED["Total"] }}</td>
           <td colspan="69"></td>
         </tr>
       </tfoot>
