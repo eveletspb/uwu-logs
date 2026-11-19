@@ -103,7 +103,13 @@ folder, and interrupted imports resume from the pending capture.
 `deploy/rust.Dockerfile` builds the standalone server. The migration
 configuration `deploy/compose.raidledger.yaml` reuses the existing UwU Logs
 volumes for reports, raw archives, uploads, auxiliary databases and game logs.
-Set `RAIDLEDGER_HOST` to the server's LAN address when remote access is needed.
+For LAN access, put `RAIDLEDGER_HOST` in `.env` and pass that file explicitly
+when starting Compose from the repository root:
+
+```sh
+docker compose --env-file .env -f deploy/compose.raidledger.yaml up -d --build --wait
+```
+
 Back up the original volumes and separately capture `_report_aliases.json`
 if present. Copy that file into the RaidLedger state volume before startup.
 

@@ -16,6 +16,7 @@ RUN apt-get update \
 COPY --from=build /build/target/release/raidledger /usr/local/bin/raidledger
 COPY templates/ /app/templates/
 COPY static/ /app/static/
+RUN chmod -R a+rX /app/templates /app/static
 ENV RAIDLEDGER_ROOT=/data RAIDLEDGER_ASSETS=/app RAIDLEDGER_BIND=0.0.0.0:5000 RAIDLEDGER_7Z=7z
 WORKDIR /app
 USER raidledger
