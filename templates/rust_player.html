@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+{% block the_main %}
+<main>
+  <h1>{{ player }}</h1>
+  <section class="table-wrap">
+    <table class="recent-table">
+      <thead><tr><th>Способность</th><th>Урон</th><th>Лечение</th><th>Получено урона</th><th>Применения</th></tr></thead>
+      <tbody>
+      {% for id, spell in spells %}
+      <tr><td>{{ spell.name }} ({{ id }})</td><td>{{ spell.damage }}</td><td>{{ spell.healing }}</td><td>{{ spell.taken }}</td><td>{{ spell.casts }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</main>
+{% endblock %}

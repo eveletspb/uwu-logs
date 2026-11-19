@@ -20,57 +20,101 @@ struct Block {
 struct Index {
     blocks: Vec<Block>,
     events: u64,
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    metadata: serde_json::Value,
 }
 
-pub fn write_report(mut events: impl BufRead, mut output: impl Write) -> io::Result<u64> {
-    output.write_all(MAGIC)?;
-    let mut buffer = Vec::with_capacity(BLOCK_BYTES);
+pub(crate) fn read_event(input: &mut impl BufRead, event: &mut Vec<u8>) -> io::Result<usize> {
+    event.clear();
+    let read = input
+        .take(MAX_EVENT_BYTES as u64 + 1)
+        .read_until(b'\n', event)?;
+    if read > MAX_EVENT_BYTES {
+        return Err(invalid("combat log event exceeds the size limit"));
+    }
+    Ok(read)
+}
+
+pub struct ReportWriter<W> {
+    output: W,
+    index: Index,
+    offset: u64,
+    buffer: Vec<u8>,
+    events_in_block: u32,
+}
+
+impl<W: Write> ReportWriter<W> {
+    pub fn new(mut output: W) -> io::Result<Self> {
+        output.write_all(MAGIC)?;
+        Ok(Self {
+            output,
+            index: Index {
+                blocks: Vec::new(),
+                events: 0,
+                metadata: serde_json::Value::Null,
+            },
+            offset: MAGIC.len() as u64,
+            buffer: Vec::with_capacity(BLOCK_BYTES),
+            events_in_block: 0,
+        })
+    }
+
+    pub fn push_event(&mut self, event: &[u8]) -> io::Result<()> {
+        if event.is_empty() || event.len() > MAX_EVENT_BYTES {
+            return Err(invalid("invalid combat event size"));
+        }
+        if self.buffer.len() + event.len() > BLOCK_BYTES {
+            self.flush_block()?;
+        }
+        self.buffer.extend_from_slice(event);
+        self.events_in_block += 1;
+        Ok(())
+    }
+
+    fn flush_block(&mut self) -> io::Result<()> {
+        if self.events_in_block == 0 {
+            return Ok(());
+        }
+        let compressed = zstd::bulk::compress(&self.buffer, 3)?;
+        self.output.write_all(&compressed)?;
+        self.index.blocks.push(Block {
+            offset: self.offset,
+            stored_bytes: compressed.len() as u32,
+            raw_bytes: self.buffer.len() as u32,
+            first_event: self.index.events,
+            events: self.events_in_block,
+        });
+        self.index.events += u64::from(self.events_in_block);
+        self.offset += compressed.len() as u64;
+        self.buffer.clear();
+        self.events_in_block = 0;
+        Ok(())
+    }
+
+    pub fn finish(mut self, metadata: serde_json::Value) -> io::Result<u64> {
+        self.flush_block()?;
+        if self.index.events == 0 {
+            return Err(invalid("empty combat log"));
+        }
+        self.index.metadata = metadata;
+        let footer = serde_json::to_vec(&self.index).map_err(io::Error::other)?;
+        if footer.len() as u64 > MAX_INDEX_BYTES {
+            return Err(invalid("combat log index exceeds the size limit"));
+        }
+        self.output.write_all(&footer)?;
+        self.output
+            .write_all(&(footer.len() as u64).to_le_bytes())?;
+        Ok(self.index.events)
+    }
+}
+
+pub fn write_report(mut events: impl BufRead, output: impl Write) -> io::Result<u64> {
+    let mut writer = ReportWriter::new(output)?;
     let mut event = Vec::new();
-    let mut index = Index {
-        blocks: Vec::new(),
-        events: 0,
-    };
-    let mut offset = MAGIC.len() as u64;
-    let mut block_events = 0;
-    loop {
-        event.clear();
-        let read = (&mut events)
-            .take(MAX_EVENT_BYTES as u64 + 1)
-            .read_until(b'\n', &mut event)?;
-        if read > MAX_EVENT_BYTES {
-            return Err(invalid("combat log event exceeds the size limit"));
-        }
-        if !buffer.is_empty() && (read == 0 || buffer.len() + read > BLOCK_BYTES) {
-            let compressed = zstd::bulk::compress(&buffer, 3)?;
-            output.write_all(&compressed)?;
-            index.blocks.push(Block {
-                offset,
-                stored_bytes: compressed.len() as u32,
-                raw_bytes: buffer.len() as u32,
-                first_event: index.events,
-                events: block_events,
-            });
-            index.events += u64::from(block_events);
-            offset += compressed.len() as u64;
-            buffer.clear();
-            block_events = 0;
-        }
-        if read == 0 {
-            break;
-        }
-        buffer.extend_from_slice(&event);
-        block_events += 1;
+    while read_event(&mut events, &mut event)? != 0 {
+        writer.push_event(&event)?;
     }
-    if index.events == 0 {
-        return Err(invalid("empty combat log"));
-    }
-    let footer = serde_json::to_vec(&index).map_err(io::Error::other)?;
-    if footer.len() as u64 > MAX_INDEX_BYTES {
-        return Err(invalid("combat log index exceeds the size limit"));
-    }
-    output.write_all(&footer)?;
-    output.write_all(&(footer.len() as u64).to_le_bytes())?;
-    Ok(index.events)
+    writer.finish(serde_json::Value::Null)
 }
 
 pub struct ReportFile<R> {
@@ -120,6 +164,10 @@ impl<R: Read + Seek> ReportFile<R> {
 
     pub fn event_count(&self) -> u64 {
         self.index.events
+    }
+
+    pub fn metadata(&self) -> &serde_json::Value {
+        &self.index.metadata
     }
 
     pub fn read_events(&mut self, range: Range<u64>, mut output: impl Write) -> io::Result<()> {

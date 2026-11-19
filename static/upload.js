@@ -1,6 +1,6 @@
 const POST_URL = "/upload";
 const CHUNK_SIZE = 256*1024;
-const ALLOWED_EXTENSIONS = ["7z", "zip", "rar", "xz", "tar", "lzma", "bzip2", "gzip"];
+const ALLOWED_EXTENSIONS = ["txt", "7z", "zip", "rar", "xz", "tar", "lzma", "bzip2", "gzip"];
 
 const SECTION_INFO = document.getElementById('upload-info');
 const SECTION_FILE = document.getElementById("upload-section");
@@ -115,7 +115,7 @@ class UploadProgress extends XMLHttpRequest {
     this.retries = 0;
     
     const response_json = JSON.parse(this.response);
-    if (response_json.done != 1) {
+    if (response_json.done == 0) {
       setTimeout(() => this.get_progress(), 250);
     }
     new_status_msg(response_json.status);
@@ -252,13 +252,13 @@ FILE_SELECT.onchange = () => {
   const file = FILE_SELECT.files[0];
   console.log(file);
   const ext = file.name.split('.').pop().toLowerCase();
-  if (!ALLOWED_EXTENSIONS.includes(ext) || file.type == "text/plain") {
+  if (!ALLOWED_EXTENSIONS.includes(ext)) {
     alert('File is not an archive.\nPlease archive the file first.');
     FILE_SELECT.value = "";
-  } else if (file.size < 16*1024) {
-    alert('Archive is too small, did you archive correct file?\nTry to archive without compression.');
+  } else if (file.size === 0) {
+    alert('Файл пуст.');
     FILE_SELECT.value = "";
-  } else if (file.size > 1024**4) {
+  } else if (file.size > 8 * 1024**3) {
     alert("Archive is too big.\nAre you sure it's the correct file?\nAre you sure you compressed it?");
     FILE_SELECT.value = "";
   }

@@ -49,7 +49,7 @@
     history.replaceState(null, '', url);
     document.querySelectorAll('.encounter-attempt').forEach(link => { link.hash = url.hash; });
   }));
-  document.getElementById('player-filter').addEventListener('input', event => {
+  document.getElementById('player-filter')?.addEventListener('input', event => {
     const search = event.target.value.trim().toLocaleLowerCase();
     main.querySelectorAll('.table-players tbody tr').forEach((row, index) => {
       row.hidden = index > 0 && !row.querySelector('.player-cell').textContent.toLocaleLowerCase().includes(search);

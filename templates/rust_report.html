@@ -1,0 +1,28 @@
+{% extends "layout.html" %}
+{% block the_main %}
+<main id="report-main">
+  <h1>{{ REPORT_NAME }}</h1>
+  <div><a href="?boss=all">Все бои</a> · <a href="download?format=txt">Скачать лог</a> · <a href="download?format=json">Скачать JSON</a></div>
+  <section class="table-wrap">
+    <table class="recent-table">
+      <thead><tr><th>Бой</th><th>Режим</th><th>Исход</th><th>Секунды</th></tr></thead>
+      <tbody>
+      {% for encounter in encounters %}
+      <tr><td><a class="encounter-attempt {{ encounter.outcome }}-link" href="{{ encounter.query }}">{{ encounter.boss }}</a></td><td>{{ encounter.difficulty }}</td><td>{{ 'Убийство' if encounter.outcome == 'kill' else 'Вайп' }}</td><td>{{ encounter.duration }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <h2>Игроки</h2>
+  <section class="table-wrap">
+    <table class="recent-table">
+      <thead><tr><th>Игрок</th><th>Урон</th><th>DPS</th><th>Лечение</th><th>HPS</th><th>Получено урона</th><th>Смерти</th></tr></thead>
+      <tbody>
+      {% for player in players %}
+      <tr><td><a href="player/{{ player.name | urlencode }}/{{ '?' ~ query if query else '' }}">{{ player.name }}</a></td><td>{{ player.damage }}</td><td>{{ player.dps }}</td><td>{{ player.healing }}</td><td>{{ player.hps }}</td><td>{{ player.damage_taken }}</td><td>{{ player.deaths }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</main>
+{% endblock %}

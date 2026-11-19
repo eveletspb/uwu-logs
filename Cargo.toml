@@ -9,5 +9,6 @@ minijinja = { version = "2", features = ["loader", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "fs", "io-util"] }
+tokio-util = { version = "0.7", features = ["io", "io-util"] }
 tower-http = { version = "0.6", features = ["fs"] }
 zstd = "0.13"

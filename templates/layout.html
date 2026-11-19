@@ -17,8 +17,8 @@
   <nav aria-label="Основная навигация">
     <a id="home-button" href="/">UwU Logs<small>RAID ANALYTICS</small></a>
     <div id="top-nav">
-      <a href="/logs_list" class="{{ 'active' if request.path == '/' or request.path.startswith('/logs_list') else '' }}">Рейды</a>
-      <a href="/upload" class="{{ 'active' if request.path.startswith('/upload') else '' }}">Импорт</a>
+      <a href="/logs_list" class="{{ 'active' if request.path == '/' or request.path[:10] == '/logs_list' else '' }}">Рейды</a>
+      <a href="/upload" class="{{ 'active' if request.path[:7] == '/upload' else '' }}">Импорт</a>
       {% if REPORT_ID %}<a href="/reports/{{ REPORT_ID }}/" class="active">Отчёт</a>{% endif %}
     </div>
     <span class="local-badge">ЛОКАЛЬНО</span>
