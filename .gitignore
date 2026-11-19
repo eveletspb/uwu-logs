@@ -40,3 +40,4 @@ local-server.pid
 icons-pack.download
 LOCAL-README.txt
 requirements-installed.txt
+/target/
