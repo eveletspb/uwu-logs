@@ -258,6 +258,9 @@ impl Report {
                     *attempt += 1;
                     report.metadata.encounters.push(segment);
                 }
+                if let (Some((first, _)), Some((_, end))) = (report.clock, part.clock) {
+                    report.clock = Some((first, end));
+                }
                 report.legacy_rows += part.legacy_rows;
             }
         }
@@ -395,6 +398,46 @@ impl Report {
             Source::Legacy(_) => (self.legacy_rows > 0).then_some(self.legacy_rows),
             Source::Indexed(report) => Some(report.event_count()),
         }
+    }
+
+    pub fn has_lockout(&self) -> bool {
+        self.metadata.lockout.is_some()
+            || matches!(&self.source, Source::Legacy(paths) if paths.first()
+                .and_then(|path| path.parent()).is_some_and(|dir| dir.join("LOCKOUT.json").is_file()))
+    }
+
+    pub fn whole_log(&mut self) -> io::Result<Option<Encounter>> {
+        let Some(rows) = self.row_count() else {
+            return Ok(None);
+        };
+        let stamps = if let Some(stamps) = self.clock {
+            Some(stamps)
+        } else {
+            let mut first = None;
+            let mut last = None;
+            let stamp = |line: &str| {
+                line.split_once(',')
+                    .and_then(|(stamp, _)| Stamp::parse(stamp))
+            };
+            self.visit(Some(0..1), |_, line| first = stamp(line))?;
+            self.visit(Some(rows - 1..rows), |_, line| last = stamp(line))?;
+            first.zip(last)
+        };
+        Ok(stamps.map(|(first, last)| {
+            let millis = last.relative_to(first, year_from_id(&self.id)).max(0) as u64;
+            Encounter {
+                boss: "Custom Slice".into(),
+                boss_slug: "custom".into(),
+                attempt: 0,
+                start: 0,
+                end: rows,
+                difficulty: String::new(),
+                outcome: String::new(),
+                duration_seconds: millis as f64 / 1000.0,
+                start_second: 0,
+                end_second: millis.div_ceil(1000),
+            }
+        }))
     }
 
     pub fn archive(&self, root: &Path) -> Option<PathBuf> {
@@ -654,6 +697,7 @@ pub fn import_with_manifest(
     manifest: Option<(&Manifest, &str)>,
 ) -> io::Result<String> {
     import_capture(root, inputs, year, realm, manifest, None)
+        .map(|reports| reports.into_iter().next().unwrap())
 }
 
 pub fn import_capture(
@@ -663,7 +707,7 @@ pub fn import_capture(
     realm: &str,
     manifest: Option<(&Manifest, &str)>,
     capture: Option<&str>,
-) -> io::Result<String> {
+) -> io::Result<Vec<String>> {
     if let Some(capture) = capture
         && !valid_capture(capture)
     {
@@ -686,33 +730,81 @@ pub fn import_capture(
         .map(str::to_owned)
         .collect::<BTreeSet<_>>();
     let (first, author, lockout) =
-        build_native(file, inputs, year, realm, manifest, (None, &captures))?;
+        build_native(file, inputs, year, realm, manifest, (None, &captures), None)?;
+    let initial = PendingReport {
+        staged,
+        first,
+        lockout,
+        captures,
+        year,
+    };
+    let mut parts = build_partitions(
+        &directory,
+        &initial.staged.0,
+        year,
+        &initial.captures,
+        author.as_deref().unwrap_or("Unknown"),
+        realm,
+        manifest,
+    )?;
+    if parts.is_empty() {
+        parts.push(initial);
+    }
     let _guard = PUBLISH
         .lock()
         .map_err(|_| io::Error::other("report publication lock failed"))?;
+    parts
+        .iter()
+        .map(|part| publish(&directory, part, author.as_deref(), realm))
+        .collect()
+}
 
-    if let Some(capture) = capture
-        && let Some((id, _)) = find_native(&directory, |metadata| {
+struct PendingReport {
+    staged: Staged,
+    first: Stamp,
+    lockout: Option<Lockout>,
+    captures: BTreeSet<String>,
+    year: u32,
+}
+
+fn publish(
+    directory: &Path,
+    part: &PendingReport,
+    author: Option<&str>,
+    realm: &str,
+) -> io::Result<String> {
+    let PendingReport {
+        staged,
+        first,
+        lockout,
+        captures,
+        year,
+    } = part;
+    if !captures.is_empty()
+        && let Some((id, _)) = find_native(directory, |metadata| {
             metadata
                 .get("captures")
                 .and_then(serde_json::Value::as_array)
-                .is_some_and(|captures| {
-                    captures.iter().any(|value| value.as_str() == Some(capture))
+                .is_some_and(|existing| {
+                    existing
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .any(|capture| captures.contains(capture))
                 })
         })?
     {
         return Ok(id);
     }
-    if let Some(lockout) = &lockout
-        && let Some((id, previous)) = find_native(&directory, |metadata| {
+    if let Some(lockout) = lockout
+        && let Some((id, previous)) = find_native(directory, |metadata| {
             metadata
                 .get("lockout")
                 .and_then(|value| serde_json::from_value::<Lockout>(value.clone()).ok())
                 .is_some_and(|previous| previous.matches(lockout))
         })?
     {
-        let previous_year = 2000 + id[..2].parse::<u32>().unwrap_or(0);
-        let mut merged_captures = captures;
+        let previous_year = year_from_id(&id);
+        let mut merged_captures = captures.clone();
         merged_captures.extend(
             previous
                 .metadata()
@@ -725,15 +817,16 @@ pub fn import_capture(
         );
         let previous = BufReader::new(previous.into_reader());
         let current = BufReader::new(ReportFile::open(File::open(&staged.0)?)?.into_reader());
-        let merge = BufReader::new(Merge::new([previous, current], [previous_year, year])?);
-        let (combined, file) = Staged::create(&directory)?;
+        let merge = BufReader::new(Merge::new([previous, current], [previous_year, *year])?);
+        let (combined, file) = Staged::create(directory)?;
         build_native(
             file,
             [Ok(merge)],
-            previous_year.min(year),
+            previous_year.min(*year),
             realm,
             None,
             (Some(lockout.clone()), &merged_captures),
+            None,
         )?;
         let original = directory.join(format!("{id}.uwu"));
         let backups = directory
@@ -744,7 +837,6 @@ pub fn import_capture(
         fs::rename(&combined.0, original)?;
         return Ok(id);
     }
-
     let date = format!(
         "{:02}-{:02}-{:02}--{:02}-{:02}",
         year % 100,
@@ -753,16 +845,14 @@ pub fn import_capture(
         first.hour,
         first.minute
     );
-    let author = id_component(author.as_deref().unwrap_or("Unknown"));
+    let author = id_component(author.unwrap_or("Unknown"));
     let realm = id_component(realm);
-    let id = format!("{date}--{author}--{realm}");
-    let mut candidate = id.clone();
+    let mut candidate = format!("{date}--{author}--{realm}");
     let mut suffix = 1;
     loop {
-        let target = directory.join(format!("{candidate}.uwu"));
         if !directory.join(&candidate).exists() {
-            match fs::hard_link(&staged.0, target) {
-                Ok(()) => break,
+            match fs::hard_link(&staged.0, directory.join(format!("{candidate}.uwu"))) {
+                Ok(()) => return Ok(candidate),
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
                 Err(error) => return Err(error),
             }
@@ -770,7 +860,172 @@ pub fn import_capture(
         suffix += 1;
         candidate = format!("{date}-{suffix}--{author}--{realm}");
     }
-    Ok(candidate)
+}
+
+fn raid_index(fight: &Encounter) -> Option<usize> {
+    CATALOG
+        .raids
+        .iter()
+        .position(|raid| raid.bosses.contains(&fight.boss))
+}
+
+#[derive(Default)]
+struct Partition {
+    raid: usize,
+    ranges: Vec<Range<u64>>,
+    fights: Vec<Encounter>,
+    events: u64,
+}
+
+fn partition_by_raid(encounters: Vec<Encounter>, events: u64) -> Vec<Partition> {
+    let mut encounters = encounters;
+    encounters.sort_by_key(|fight| fight.start);
+    let found: BTreeSet<_> = encounters.iter().filter_map(raid_index).collect();
+    if found.len() < 2 {
+        return Vec::new();
+    }
+    let mut raid = encounters.iter().find_map(raid_index).unwrap();
+    let mut first = 0;
+    let mut current = Vec::new();
+    let mut result = Vec::<Partition>::new();
+    let append = |result: &mut Vec<Partition>, raid, span: Range<u64>, fights: Vec<Encounter>| {
+        if !result.iter().any(|part| part.raid == raid) {
+            result.push(Partition {
+                raid,
+                ..Partition::default()
+            });
+        }
+        let part = result.iter_mut().find(|part| part.raid == raid).unwrap();
+        for mut fight in fights {
+            fight.end = fight.end.min(span.end);
+            if fight.start < fight.end {
+                fight.start = fight.start - span.start + part.events;
+                fight.end = fight.end - span.start + part.events;
+                part.fights.push(fight);
+            }
+        }
+        part.events += span.end - span.start;
+        part.ranges.push(span);
+    };
+    for fight in encounters {
+        let key = raid_index(&fight).unwrap_or(raid);
+        if key != raid && fight.start > first {
+            append(
+                &mut result,
+                raid,
+                first..fight.start,
+                std::mem::take(&mut current),
+            );
+            first = fight.start;
+            raid = key;
+        }
+        current.push(fight);
+    }
+    append(&mut result, raid, first..events, current);
+    result
+}
+
+fn build_partitions(
+    directory: &Path,
+    original: &Path,
+    year: u32,
+    captures: &BTreeSet<String>,
+    author: &str,
+    realm: &str,
+    manifest: Option<(&Manifest, &str)>,
+) -> io::Result<Vec<PendingReport>> {
+    let source = ReportFile::open(File::open(original)?)?;
+    let metadata: Metadata =
+        serde_json::from_value(source.metadata().clone()).map_err(io::Error::other)?;
+    let parts = partition_by_raid(metadata.encounters, source.event_count());
+    if parts.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut origin = String::new();
+    BufReader::new(source.into_reader()).read_line(&mut origin)?;
+    let month = origin
+        .split_once(',')
+        .and_then(|(stamp, _)| Stamp::parse(stamp))
+        .map_or(1, |stamp| stamp.month);
+    parts
+        .into_iter()
+        .map(|part| {
+            let source = ReportFile::open(File::open(original)?)?;
+            let mut reader = BufReader::new(source.into_range_reader(part.ranges)?);
+            let buffer = std::str::from_utf8(reader.fill_buf()?).map_err(io::Error::other)?;
+            let first = buffer
+                .split_once(',')
+                .and_then(|(stamp, _)| Stamp::parse(stamp))
+                .ok_or_else(|| io::Error::other("raid partition has no starting event"))?;
+            let year = year + u32::from(month > first.month + 6);
+            let captures = captures
+                .iter()
+                .map(|capture| format!("{capture}-raid-{}", part.raid))
+                .collect::<BTreeSet<_>>();
+            let (staged, file) = Staged::create(directory)?;
+            let (_, _, lockout) = build_native(
+                file,
+                [Ok(reader)],
+                year,
+                realm,
+                manifest,
+                (None, &captures),
+                Some((part.fights, author)),
+            )?;
+            Ok(PendingReport {
+                staged,
+                first,
+                lockout,
+                captures,
+                year,
+            })
+        })
+        .collect()
+}
+
+pub fn split_report(root: &Path, id: &str) -> io::Result<Vec<String>> {
+    if !valid_id(id) {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    let fields = id.splitn(4, "--").collect::<Vec<_>>();
+    let [_, _, author, realm] = fields.as_slice() else {
+        return Err(io::ErrorKind::InvalidInput.into());
+    };
+    let _guard = PUBLISH
+        .lock()
+        .map_err(|_| io::Error::other("report publication lock failed"))?;
+    let directory = root.join("LogsDir");
+    let original = directory.join(format!("{id}.uwu"));
+    let source = ReportFile::open(File::open(&original)?)?;
+    let metadata: Metadata =
+        serde_json::from_value(source.metadata().clone()).map_err(io::Error::other)?;
+    let mut captures = metadata.captures;
+    captures.insert(format!("split-existing-{id}"));
+    let parts = build_partitions(
+        &directory,
+        &original,
+        year_from_id(id),
+        &captures,
+        author,
+        realm,
+        None,
+    )?;
+    let Some((first, later)) = parts.split_first() else {
+        return Ok(vec![id.to_owned()]);
+    };
+    let backup = directory.join(".raid-split-backups");
+    fs::create_dir_all(&backup)?;
+    match fs::hard_link(&original, backup.join(format!("{id}.uwu"))) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error),
+    }
+    let mut ids = vec![id.to_owned()];
+    for part in later {
+        ids.push(publish(&directory, part, Some(author), realm)?);
+    }
+    fs::rename(&first.staged.0, original)?;
+    Ok(ids)
 }
 
 fn build_native(
@@ -780,6 +1035,7 @@ fn build_native(
     realm: &str,
     manifest: Option<(&Manifest, &str)>,
     provenance: (Option<Lockout>, &BTreeSet<String>),
+    existing: Option<(Vec<Encounter>, &str)>,
 ) -> io::Result<(Stamp, Option<String>, Option<Lockout>)> {
     let mut file = BufWriter::new(file);
     let mut writer = ReportWriter::new(&mut file)?;
@@ -787,10 +1043,22 @@ fn build_native(
     let mut normalized = String::new();
     let mut first = None;
     let mut last = None;
-    let mut author = None;
+    let (existing, identified_author) = existing.map_or((None, None), |(fights, author)| {
+        (Some(fights), Some(author.to_owned()))
+    });
+    let mut author = identified_author;
     let mut event_index = 0;
     let mut metadata = Metadata::default();
-    let mut pulls = crate::encounters::Pulls::default();
+    let mut pulls = existing.is_none().then(crate::encounters::Pulls::default);
+    let mut spans = existing.unwrap_or_default();
+    let mut bounds = BTreeMap::<u64, Vec<(usize, bool)>>::new();
+    for (index, fight) in spans.iter().enumerate() {
+        bounds.entry(fight.start).or_default().push((index, true));
+        bounds
+            .entry(fight.end - 1)
+            .or_default()
+            .push((index, false));
+    }
     for input in inputs {
         let mut input = input?;
         while read_event(&mut input, &mut raw)? > 0 {
@@ -821,14 +1089,30 @@ fn build_native(
                 metadata.time_index.push((second, event_index));
             }
             metadata.observe_units(&event);
-            pulls.observe(event_index, time, &event);
+            if let Some(pulls) = &mut pulls {
+                pulls.observe(event_index, time, &event);
+            }
+            if let Some(boundaries) = bounds.remove(&event_index) {
+                for (index, start) in boundaries {
+                    if start {
+                        spans[index].start_second = second;
+                    } else {
+                        spans[index].end_second = time.div_ceil(1000);
+                    }
+                }
+            }
             writer.push_event(normalized.as_bytes())?;
             event_index += 1;
         }
     }
     let first = first
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no valid combat events"))?;
-    metadata.encounters = pulls.finish();
+    if !bounds.is_empty() {
+        return Err(io::Error::other(
+            "raid partition lost an encounter boundary",
+        ));
+    }
+    metadata.encounters = pulls.map_or(spans, crate::encounters::Pulls::finish);
     metadata.fill_pet_owners();
     let author =
         author.or_else(|| manifest.and_then(|(manifest, _)| manifest.author(&metadata, realm)));
@@ -886,9 +1170,20 @@ pub fn merge_reports(root: &Path, ids: &[String]) -> io::Result<String> {
     let mut reports = ids
         .iter()
         .map(|id| Report::open(root, id))
-        .collect::<io::Result<Vec<_>>>()?
-        .into_iter();
-    let canonical = reports.next().unwrap();
+        .collect::<io::Result<Vec<_>>>()?;
+    if reports
+        .iter()
+        .flat_map(|report| report.metadata.encounters.iter().filter_map(raid_index))
+        .collect::<BTreeSet<_>>()
+        .len()
+        > 1
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "different raids cannot be merged",
+        ));
+    }
+    let canonical = reports.remove(0);
     let lockout = canonical.metadata.lockout.clone();
     let mut captures = canonical.metadata.captures.clone();
     let year = year_from_id(&canonical.id);
@@ -907,6 +1202,7 @@ pub fn merge_reports(root: &Path, ids: &[String]) -> io::Result<String> {
             realm,
             None,
             (lockout.clone(), &captures),
+            None,
         )?;
         reader = BufReader::new(Box::new(
             ReportFile::open(File::open(&staged.0)?)?.into_reader(),
@@ -1032,6 +1328,35 @@ fn id_component(value: &str) -> String {
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn raid_partitions_keep_revisited_raid_in_one_report() {
+        let fight = |boss: &str, start, end| Encounter {
+            boss: boss.to_owned(),
+            boss_slug: slug(boss),
+            start,
+            end,
+            attempt: 0,
+            difficulty: "25N".into(),
+            outcome: "kill".into(),
+            duration_seconds: 90.0,
+            start_second: 0,
+            end_second: 90,
+        };
+        let fights = vec![
+            fight("The Prophet Skeram", 10, 30),
+            fight("Razorgore the Untamed", 50, 70),
+            fight("Battleguard Sartura", 80, 100),
+        ];
+        let parts = partition_by_raid(fights.clone(), 110);
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0].ranges, [0..50, 80..110]);
+        assert_eq!(parts[0].fights[1].start, 50);
+        assert_eq!(parts[0].fights[1].end, 70);
+        assert_eq!(parts[1].fights[0].start, 0);
+        assert_eq!(parts[0].events + parts[1].events, 110);
+        assert!(partition_by_raid(vec![fights[0].clone(), fights[2].clone()], 110).is_empty());
+    }
 
     #[test]
     fn one_import_with_multiple_days_publishes_one_report() {

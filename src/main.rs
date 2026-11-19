@@ -9,7 +9,7 @@ use axum::{Json, Router, routing::get};
 use minijinja::{Environment, context, path_loader};
 use raidledger::combat::CATALOG;
 use raidledger::metrics::{aggregate, player_spells};
-use raidledger::reports::{Encounter, LegacyGroups, Report, import_log, list_ids};
+use raidledger::reports::{Encounter, LegacyGroups, Report, import_capture, list_ids};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs::{self, File};
@@ -882,13 +882,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .collect::<Vec<_>>()
                 .try_into()
                 .map_err(|_| "usage: raidledger import <combat-log.txt> <year> <server>")?;
-            let id = import_log(
+            let ids = import_capture(
                 &root,
-                BufReader::new(File::open(log)?),
+                [Ok(BufReader::new(File::open(log)?))],
                 year.parse()?,
                 &server,
+                None,
+                None,
             )?;
-            println!("{id}");
+            for id in ids {
+                println!("{id}");
+            }
+        }
+        Some("split-raids") => {
+            let id = env::args()
+                .nth(2)
+                .ok_or("usage: raidledger split-raids <report-id>")?;
+            for id in raidledger::reports::split_report(&root, &id)? {
+                println!("{id}");
+            }
         }
         Some("merge") => {
             let ids = env::args().skip(2).collect::<Vec<_>>();

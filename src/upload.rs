@@ -120,8 +120,12 @@ pub async fn receive(
             if let Some(upload) = uploads.get_mut(&peer) {
                 upload.processing = false;
                 upload.status = Some(match result {
-                    Ok(id) => {
-                        json!({"done": 1, "status": "Report saved", "slices": { id: { "status": "Saved", "done": 1 } }})
+                    Ok(ids) => {
+                        let slices = ids
+                            .into_iter()
+                            .map(|id| (id, json!({"status": "Saved", "done": 1})))
+                            .collect::<serde_json::Map<_, _>>();
+                        json!({"done": 1, "status": "Reports saved", "slices": slices})
                     }
                     Err(error) => {
                         json!({"done": -1, "status": format!("Error: {error}"), "slices": {}})
@@ -220,7 +224,7 @@ fn import_file(
     source: &Path,
     request: &UploadMetadata,
     year: u32,
-) -> io::Result<String> {
+) -> io::Result<Vec<String>> {
     let filename = request.filename.to_ascii_lowercase();
     let realm = &request.server;
     if filename.ends_with(".txt") {

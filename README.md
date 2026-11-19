@@ -60,12 +60,15 @@ repository directory with `target/release/raidledger`. The server listens on
 `RAIDLEDGER_BIND` sets the listen address, and `RAIDLEDGER_7Z` selects the
 7-Zip executable for archive imports.
 
-One successful upload produces one `LogsDir/<report-id>.uwu` file. The
-file contains independently compressed Zstandard blocks and a versioned
-index with the byte offset and first event of each block. The server uses
-the index to read encounter ranges and streams complete text downloads.
-It publishes a new report after writing the complete file on the reports
-filesystem.
+A single raid produces one `LogsDir/<report-id>.uwu` file regardless of
+upload size or the number of log files in the archive. If an upload spans
+different recognized raids, each raid gets its own report and download.
+Reports use independently compressed Zstandard blocks and an index for
+reading encounter ranges and streaming text downloads.
+
+To split an existing mixed report, run `raidledger split-raids <report-id>`.
+The first raid keeps the existing link and the original indexed file is
+preserved in `LogsDir/.raid-split-backups`.
 
 When separate uploads identify the same raid save in their
 `uwu-lockouts.json` manifests, the server updates the first report in

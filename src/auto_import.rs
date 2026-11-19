@@ -336,7 +336,7 @@ impl Worker {
         let capture: Capture = read_json(&pending.join("capture.json"))?;
         let manifest = Manifest::parse(&fs::read(&manifest_file)?)?;
         self.set(json!({"state":"importing"}));
-        let report = import_capture(
+        let reports = import_capture(
             &self.root,
             [Ok(BufReader::new(File::open(&raw)?))],
             capture.year,
@@ -388,7 +388,7 @@ impl Worker {
         fs::remove_file(manifest_file)?;
         fs::remove_file(pending.join("capture.json"))?;
         fs::remove_dir(pending)?;
-        self.set(json!({"state":"ready","last_reports":[report],"last_rotated":destination}));
+        self.set(json!({"state":"ready","last_reports":reports,"last_rotated":destination}));
         Ok(())
     }
 

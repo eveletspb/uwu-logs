@@ -123,7 +123,7 @@ pub fn write_report(mut events: impl BufRead, output: impl Write) -> io::Result<
 
 pub struct LogStream<R> {
     report: ReportFile<R>,
-    next: usize,
+    ranges: std::collections::VecDeque<Range<u64>>,
     buffer: io::Cursor<Vec<u8>>,
 }
 
@@ -133,14 +133,22 @@ impl<R: Read + Seek> Read for LogStream<R> {
             return Ok(0);
         }
         if self.buffer.position() as usize == self.buffer.get_ref().len() {
-            let Some(block) = self.report.index.blocks.get(self.next) else {
+            let Some(range) = self.ranges.front_mut() else {
                 return Ok(0);
             };
-            let range = block.first_event..block.first_event + u64::from(block.events);
+            let next = self.report.index.blocks.partition_point(|block| {
+                block.first_event + u64::from(block.events) <= range.start
+            });
+            let block = &self.report.index.blocks[next];
+            let end = range.end.min(block.first_event + u64::from(block.events));
+            let selected = range.start..end;
+            range.start = end;
+            if range.is_empty() {
+                self.ranges.pop_front();
+            }
             self.buffer.get_mut().clear();
             self.buffer.set_position(0);
-            self.report.read_events(range, self.buffer.get_mut())?;
-            self.next += 1;
+            self.report.read_events(selected, self.buffer.get_mut())?;
         }
         self.buffer.read(output)
     }
@@ -192,11 +200,27 @@ impl<R: Read + Seek> ReportFile<R> {
     }
 
     pub fn into_reader(self) -> LogStream<R> {
-        LogStream {
-            report: self,
-            next: 0,
-            buffer: io::Cursor::new(Vec::new()),
+        let end = self.event_count();
+        self.into_range_reader(std::iter::once(0..end))
+            .expect("full report range")
+    }
+
+    pub fn into_range_reader(
+        self,
+        ranges: impl IntoIterator<Item = Range<u64>>,
+    ) -> io::Result<LogStream<R>> {
+        let ranges: std::collections::VecDeque<_> = ranges
+            .into_iter()
+            .filter(|range| !range.is_empty())
+            .collect();
+        if ranges.iter().any(|range| range.end > self.event_count()) {
+            return Err(invalid("report event range is out of bounds"));
         }
+        Ok(LogStream {
+            report: self,
+            ranges,
+            buffer: io::Cursor::new(Vec::new()),
+        })
     }
 
     pub fn event_count(&self) -> u64 {
