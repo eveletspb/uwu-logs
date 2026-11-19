@@ -8,4 +8,5 @@
   <a href="/reports/{{ REPORT_ID }}/powers/{{ query }}">Ресурсы</a>
   <a href="/reports/{{ REPORT_ID }}/compare/{{ query }}">Сравнение</a>
   <a href="/reports/{{ REPORT_ID }}/download?format=txt">Скачать лог</a>
+  {% for mechanic in mechanics %}<a href="/reports/{{ REPORT_ID }}/{{ mechanic.route }}/{{ query }}">{{ mechanic.title }}</a>{% endfor %}
 </nav>

@@ -1,0 +1,21 @@
+{% extends 'layout.html' %}
+{% block the_main %}
+<main>
+  <h1>{{ heading }}</h1>
+  {% include 'rust_report_nav.html' %}
+  <div class="encounter-list">
+    {% for encounter in relevant %}<a class="encounter-attempt" href="{{ encounter.query }}">{{ encounter.label }}</a>{% endfor %}
+  </div>
+  {% for table in tables %}
+    <section class="table-wrap">
+      <table class="recent-table">
+        <caption>{{ table.caption }}</caption>
+        <thead><tr>{% for column in table.columns %}<th scope="col">{{ column }}</th>{% endfor %}</tr></thead>
+        <tbody>{% for row in table.rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+      </table>
+    </section>
+  {% else %}
+    <p>В выбранных попытках нет событий этой механики.</p>
+  {% endfor %}
+</main>
+{% endblock %}

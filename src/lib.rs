@@ -4,6 +4,7 @@ pub mod combat;
 pub mod compare;
 mod encounters;
 pub mod lockouts;
+pub mod mechanics;
 pub mod metrics;
 pub mod reports;
 pub mod storage;

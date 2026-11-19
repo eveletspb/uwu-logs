@@ -362,6 +362,14 @@ async fn report_page(
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
         let selected = select(&mut report, &query)?;
+        let mechanics = [
+            ("the-lich-king", "valks", "Валь’киры Короля-лича"),
+            ("lady-deathwhisper", "lady_spirits", "Мстительные тени"),
+            ("sindragosa", "ucm", "Нестабильность Синдрагосы"),
+            ("twin-valkyr", "toc_valks", "Щиты близнецов-валь’кир"),
+        ].into_iter().filter(|(boss, _, _)| selected.iter().any(|fight| fight.boss_slug == *boss))
+            .map(|(_, route, title)| context! { route, title }).collect::<Vec<_>>();
+
         let summary = aggregate(&mut report, &selected)?;
         let mut players = summary.players.into_values().collect::<Vec<_>>();
         players.sort_by_key(|player| std::cmp::Reverse(player.rates.totals.damage));
@@ -371,7 +379,7 @@ async fn report_page(
         }).collect::<Vec<_>>();
         app.render("rust_report.html", context! {
             request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id,
-            encounters => encounter_links, players, totals => summary.totals, duration => summary.duration_seconds, query => uri.query().map(|query| format!("?{query}")).unwrap_or_default(),
+            encounters => encounter_links, players, mechanics, totals => summary.totals, duration => summary.duration_seconds, query => uri.query().map(|query| format!("?{query}")).unwrap_or_default(),
         })
     }).await
 }
@@ -506,6 +514,22 @@ async fn render_section(
             .query()
             .map(|query| format!("?{query}"))
             .unwrap_or_default();
+        let mechanic = match section.as_str() {
+            "valks" => Some(("the-lich-king", "Валь’киры Короля-лича")),
+            "lady_spirits" => Some(("lady-deathwhisper", "Мстительные тени")),
+            "ucm" => Some(("sindragosa", "Нестабильность Синдрагосы")),
+            "toc_valks" => Some(("twin-valkyr", "Щиты близнецов-валь’кир")),
+            _ => None,
+        };
+        if let Some((boss, heading)) = mechanic {
+            let relevant = report.metadata.encounters.iter().filter(|fight| fight.boss_slug == boss)
+                .map(|fight| context! { query => fight.query(), label => format!("Попытка {}", fight.attempt + 1) }).collect::<Vec<_>>();
+            let tables = uwu_logs::mechanics::analyze(&mut report, &selected.into_iter()
+                .filter(|fight| fight.boss_slug == boss).collect::<Vec<_>>(), &section)?;
+            return app.render("raid_mechanics.html", context! {
+                request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id, query, heading, tables, relevant,
+            });
+        }
         let view =
             match section.as_str() {
                 "deaths" => return app.render(
