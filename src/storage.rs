@@ -121,6 +121,31 @@ pub fn write_report(mut events: impl BufRead, output: impl Write) -> io::Result<
     writer.finish(serde_json::Value::Null)
 }
 
+pub struct LogStream<R> {
+    report: ReportFile<R>,
+    next: usize,
+    buffer: io::Cursor<Vec<u8>>,
+}
+
+impl<R: Read + Seek> Read for LogStream<R> {
+    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        if output.is_empty() {
+            return Ok(0);
+        }
+        if self.buffer.position() as usize == self.buffer.get_ref().len() {
+            let Some(block) = self.report.index.blocks.get(self.next) else {
+                return Ok(0);
+            };
+            let range = block.first_event..block.first_event + u64::from(block.events);
+            self.buffer.get_mut().clear();
+            self.buffer.set_position(0);
+            self.report.read_events(range, self.buffer.get_mut())?;
+            self.next += 1;
+        }
+        self.buffer.read(output)
+    }
+}
+
 pub struct ReportFile<R> {
     input: R,
     index: Index,
@@ -164,6 +189,14 @@ impl<R: Read + Seek> ReportFile<R> {
             return Err(invalid("report index does not match report data"));
         }
         Ok(Self { input, index })
+    }
+
+    pub fn into_reader(self) -> LogStream<R> {
+        LogStream {
+            report: self,
+            next: 0,
+            buffer: io::Cursor::new(Vec::new()),
+        }
     }
 
     pub fn event_count(&self) -> u64 {

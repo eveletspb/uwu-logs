@@ -74,6 +74,12 @@ the index to read encounter ranges and streams complete text downloads.
 It publishes a new report after writing the complete file on the reports
 filesystem.
 
+When separate uploads identify the same raid save in their
+`uwu-lockouts.json` manifests, the server updates the first report in
+place. Overlapping combat events are deduplicated with their same-tick
+counts preserved. The previous version is saved in
+`LogsDir/.raid-merge-backups` before the replacement.
+
 The server also opens existing `LogsDir/<report-id>/LOGS_CUT.zstd` reports
 and their metadata in place. Keep `uploads/0file_info` and
 `_report_aliases.json` alongside the report directory when copying a

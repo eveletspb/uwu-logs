@@ -8,6 +8,7 @@ use minijinja::context;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::net::{IpAddr, SocketAddr};
@@ -15,7 +16,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use uwu_logs::reports::import_log;
+use uwu_logs::lockouts::Manifest;
+use uwu_logs::reports::{import_log, import_with_manifest};
 
 const CHUNK_SIZE: usize = 256 * 1024;
 const MAX_CHUNKS: usize = 32_768;
@@ -42,6 +44,8 @@ impl Drop for Upload {
 struct UploadMetadata {
     filename: String,
     server: String,
+    #[serde(default)]
+    timezone: String,
     chunks: usize,
 }
 
@@ -96,13 +100,7 @@ pub async fn receive(
             upload.path.clone()
         };
         tokio::task::spawn_blocking(move || {
-            let result = import_file(
-                &app.root,
-                &path,
-                &data.filename,
-                &data.server,
-                current_year(),
-            );
+            let result = import_file(&app.root, &path, &data, current_year());
             let mut uploads = app.uploads.0.lock().unwrap();
             if let Some(upload) = uploads.get_mut(&peer) {
                 upload.processing = false;
@@ -202,14 +200,14 @@ fn write_error(error: io::Error) -> Error {
     )
 }
 
-pub fn import_file(
+fn import_file(
     root: &Path,
     source: &Path,
-    filename: &str,
-    realm: &str,
+    request: &UploadMetadata,
     year: u32,
 ) -> io::Result<String> {
-    let filename = filename.to_ascii_lowercase();
+    let filename = request.filename.to_ascii_lowercase();
+    let realm = &request.server;
     if filename.ends_with(".txt") {
         return import_log(root, BufReader::new(File::open(source)?), year, realm);
     }
@@ -254,19 +252,41 @@ pub fn import_file(
             "archive does not contain a combat log",
         ));
     }
-    let readers = entries.into_iter().map(|entry| {
-        let mut child = Command::new(&sevenzip)
-            .args(["x", "-so", "-spd", "-p-", "--"])
-            .arg(source)
-            .arg(entry)
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .stdout(Stdio::piped())
-            .spawn()?;
-        let stdout = child.stdout.take().unwrap();
-        Ok(Box::new(BufReader::new(ArchiveEntry { child, stdout })) as Box<dyn io::BufRead>)
-    });
-    uwu_logs::reports::import_logs(root, readers, year, realm)
+    let manifest = if text.lines().any(|line| line == "Path = uwu-lockouts.json") {
+        let mut raw = Vec::new();
+        let mut member = archive_entry(&sevenzip, source, "uwu-lockouts.json")?.take(2_000_001);
+        member.read_to_end(&mut raw)?;
+        (raw.len() <= 2_000_000)
+            .then(|| Manifest::parse(&raw).ok())
+            .flatten()
+    } else {
+        None
+    };
+    let readers = entries
+        .into_iter()
+        .map(|entry| archive_entry(&sevenzip, source, entry).map(BufReader::new));
+    import_with_manifest(
+        root,
+        readers,
+        year,
+        realm,
+        manifest
+            .as_ref()
+            .map(|manifest| (manifest, request.timezone.as_str())),
+    )
+}
+
+fn archive_entry(executable: &OsStr, source: &Path, entry: &str) -> io::Result<ArchiveEntry> {
+    let mut child = Command::new(executable)
+        .args(["x", "-so", "-spd", "-p-", "--"])
+        .arg(source)
+        .arg(entry)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()?;
+    let stdout = child.stdout.take().unwrap();
+    Ok(ArchiveEntry { child, stdout })
 }
 
 struct ArchiveEntry {

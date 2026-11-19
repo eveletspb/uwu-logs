@@ -1,5 +1,6 @@
 use crate::absorbs::RULES;
 use crate::combat::{CATALOG, Event, Stamp, guid_boss, normalize, player_guid, slug};
+use crate::lockouts::{Lockout, Manifest, Merge};
 use crate::storage::{ReportFile, ReportWriter, read_event};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::{BTreeMap, BTreeSet};
@@ -7,6 +8,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -46,6 +48,8 @@ pub struct Metadata {
     pub classes: BTreeMap<String, String>,
     #[serde(default)]
     pub time_index: Vec<(u64, u64)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lockout: Option<Lockout>,
 }
 
 impl Metadata {
@@ -625,6 +629,16 @@ pub fn import_logs(
     year: u32,
     realm: &str,
 ) -> io::Result<String> {
+    import_with_manifest(root, inputs, year, realm, None)
+}
+
+pub fn import_with_manifest(
+    root: &Path,
+    inputs: impl IntoIterator<Item = io::Result<impl BufRead>>,
+    year: u32,
+    realm: &str,
+    manifest: Option<(&Manifest, &str)>,
+) -> io::Result<String> {
     if !(2000..2100).contains(&year) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -633,95 +647,189 @@ pub fn import_logs(
     }
     let directory = root.join("LogsDir");
     fs::create_dir_all(&directory)?;
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(io::Error::other)?
-        .as_nanos();
-    let staged = directory.join(format!(".import-{}-{nonce}", std::process::id()));
-    let file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&staged)?;
-    let result = (|| {
-        let mut file = BufWriter::new(file);
-        let mut writer = ReportWriter::new(&mut file)?;
-        let mut raw = Vec::new();
-        let mut normalized = String::new();
-        let mut first = None;
-        let mut author = None;
-        let mut event_index = 0;
-        let mut metadata = Metadata::default();
-        let mut pulls = crate::encounters::Pulls::default();
-        for input in inputs {
-            let mut input = input?;
-            while read_event(&mut input, &mut raw)? > 0 {
-                let line = std::str::from_utf8(&raw).map_err(io::Error::other)?;
-                if author.is_none()
-                    && let Some((_, tail)) = line.split_once("  SPELL_CAST_FAILED,")
-                {
-                    let mut fields = tail.split(',');
-                    if let (Some(guid), Some(name)) = (fields.next(), fields.next())
-                        && player_guid(guid)
-                    {
-                        author = Some(name.trim_matches('"').to_owned());
-                    }
-                }
-                normalize(line, &mut normalized);
-                let Some(event) = Event::parse(&normalized) else {
-                    continue;
-                };
-                let origin = *first.get_or_insert(event.stamp);
-                let time = event.stamp.relative_to(origin, year).max(0) as u64;
-                let second = time / 1000;
-                if metadata
-                    .time_index
-                    .last()
-                    .is_none_or(|(last, _)| second >= last + 5)
-                {
-                    metadata.time_index.push((second, event_index));
-                }
-                metadata.observe_units(&event);
-                pulls.observe(event_index, time, &event);
-                writer.push_event(normalized.as_bytes())?;
-                event_index += 1;
+    let (staged, file) = Staged::create(&directory)?;
+    let (first, author, lockout) = build_native(file, inputs, year, realm, manifest, None)?;
+    static PUBLISH: Mutex<()> = Mutex::new(());
+    let _guard = PUBLISH
+        .lock()
+        .map_err(|_| io::Error::other("report publication lock failed"))?;
+
+    if let Some(lockout) = &lockout
+        && let Some((id, previous)) = find_lockout(&directory, lockout)?
+    {
+        let previous_year = 2000 + id[..2].parse::<u32>().unwrap_or(0);
+        let previous = BufReader::new(previous.into_reader());
+        let current = BufReader::new(ReportFile::open(File::open(&staged.0)?)?.into_reader());
+        let merge = BufReader::new(Merge::new([previous, current], [previous_year, year])?);
+        let (combined, file) = Staged::create(&directory)?;
+        build_native(
+            file,
+            [Ok(merge)],
+            previous_year.min(year),
+            realm,
+            None,
+            Some(lockout.clone()),
+        )?;
+        let original = directory.join(format!("{id}.uwu"));
+        let backups = directory
+            .join(".raid-merge-backups")
+            .join(staged.0.file_name().unwrap());
+        fs::create_dir_all(&backups)?;
+        fs::hard_link(&original, backups.join(format!("{id}.uwu")))?;
+        fs::rename(&combined.0, original)?;
+        return Ok(id);
+    }
+
+    let date = format!(
+        "{:02}-{:02}-{:02}--{:02}-{:02}",
+        year % 100,
+        first.month,
+        first.day,
+        first.hour,
+        first.minute
+    );
+    let author = id_component(author.as_deref().unwrap_or("Unknown"));
+    let realm = id_component(realm);
+    let id = format!("{date}--{author}--{realm}");
+    let mut candidate = id.clone();
+    let mut suffix = 1;
+    loop {
+        let target = directory.join(format!("{candidate}.uwu"));
+        if !directory.join(&candidate).exists() {
+            match fs::hard_link(&staged.0, target) {
+                Ok(()) => break,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(error),
             }
         }
-        let first = first
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no valid combat events"))?;
-        metadata.encounters = pulls.finish();
-        metadata.fill_pet_owners();
-        writer.finish(serde_json::to_value(&metadata).map_err(io::Error::other)?)?;
-        file.flush()?;
-        file.get_ref().sync_all()?;
-        let date = format!(
-            "{:02}-{:02}-{:02}--{:02}-{:02}",
-            year % 100,
-            first.month,
-            first.day,
-            first.hour,
-            first.minute
+        suffix += 1;
+        candidate = format!("{date}-{suffix}--{author}--{realm}");
+    }
+    Ok(candidate)
+}
+
+fn build_native(
+    file: File,
+    inputs: impl IntoIterator<Item = io::Result<impl BufRead>>,
+    year: u32,
+    realm: &str,
+    manifest: Option<(&Manifest, &str)>,
+    inherited: Option<Lockout>,
+) -> io::Result<(Stamp, Option<String>, Option<Lockout>)> {
+    let mut file = BufWriter::new(file);
+    let mut writer = ReportWriter::new(&mut file)?;
+    let mut raw = Vec::new();
+    let mut normalized = String::new();
+    let mut first = None;
+    let mut last = None;
+    let mut author = None;
+    let mut event_index = 0;
+    let mut metadata = Metadata::default();
+    let mut pulls = crate::encounters::Pulls::default();
+    for input in inputs {
+        let mut input = input?;
+        while read_event(&mut input, &mut raw)? > 0 {
+            let line = std::str::from_utf8(&raw).map_err(io::Error::other)?;
+            if author.is_none()
+                && let Some((_, tail)) = line.split_once("  SPELL_CAST_FAILED,")
+            {
+                let mut fields = tail.split(',');
+                if let (Some(guid), Some(name)) = (fields.next(), fields.next())
+                    && player_guid(guid)
+                {
+                    author = Some(name.trim_matches('"').to_owned());
+                }
+            }
+            normalize(line, &mut normalized);
+            let Some(event) = Event::parse(&normalized) else {
+                continue;
+            };
+            let origin = *first.get_or_insert(event.stamp);
+            last = Some(event.stamp);
+            let time = event.stamp.relative_to(origin, year).max(0) as u64;
+            let second = time / 1000;
+            if metadata
+                .time_index
+                .last()
+                .is_none_or(|(last, _)| second >= last + 5)
+            {
+                metadata.time_index.push((second, event_index));
+            }
+            metadata.observe_units(&event);
+            pulls.observe(event_index, time, &event);
+            writer.push_event(normalized.as_bytes())?;
+            event_index += 1;
+        }
+    }
+    let first = first
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no valid combat events"))?;
+    metadata.encounters = pulls.finish();
+    metadata.fill_pet_owners();
+    let author =
+        author.or_else(|| manifest.and_then(|(manifest, _)| manifest.author(&metadata, realm)));
+    if let Some((manifest, timezone)) = manifest {
+        metadata.lockout = manifest.identify(
+            &metadata,
+            author.as_deref().unwrap_or("Unknown"),
+            realm,
+            year,
+            (first, last.unwrap_or(first)),
+            timezone,
         );
-        let author = id_component(author.as_deref().unwrap_or("Unknown"));
-        let realm = id_component(realm);
-        let id = format!("{date}--{author}--{realm}");
-        let mut candidate = id.clone();
-        let mut suffix = 1;
-        loop {
-            let target = directory.join(format!("{candidate}.uwu"));
-            if !directory.join(&candidate).exists() {
-                match fs::hard_link(&staged, target) {
-                    Ok(()) => break,
-                    Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-                    Err(error) => return Err(error),
-                }
-            }
-            suffix += 1;
-            candidate = format!("{date}-{suffix}--{author}--{realm}");
+    }
+    if inherited.is_some() {
+        metadata.lockout = inherited;
+    }
+    writer.finish(serde_json::to_value(&metadata).map_err(io::Error::other)?)?;
+    file.flush()?;
+    file.get_ref().sync_all()?;
+    Ok((first, author, metadata.lockout))
+}
+
+fn find_lockout(directory: &Path, key: &Lockout) -> io::Result<Option<(String, ReportFile<File>)>> {
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !entry.file_type()?.is_file() {
+            continue;
         }
-        Ok(candidate)
-    })();
-    let _ = fs::remove_file(staged);
-    result
+        let Some(id) = name.strip_suffix(".uwu").filter(|id| valid_id(id)) else {
+            continue;
+        };
+        let report = ReportFile::open(File::open(entry.path())?)?;
+        let Some(metadata) = report.metadata().get("lockout") else {
+            continue;
+        };
+        let lockout: Lockout =
+            serde_json::from_value(metadata.clone()).map_err(io::Error::other)?;
+        if lockout.matches(key) {
+            return Ok(Some((id.to_owned(), report)));
+        }
+    }
+    Ok(None)
+}
+
+struct Staged(PathBuf);
+
+impl Staged {
+    fn create(directory: &Path) -> io::Result<(Self, File)> {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(io::Error::other)?
+            .as_nanos();
+        let path = directory.join(format!(".import-{}-{stamp}", std::process::id()));
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)?;
+        Ok((Self(path), file))
+    }
+}
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
 }
 
 fn id_component(value: &str) -> String {

@@ -18,6 +18,7 @@ pub struct Catalog {
     pub some_boss_spells: BTreeSet<String>,
     pub can_be_short: BTreeSet<String>,
     pub raids: Vec<Raid>,
+    pub aliases: BTreeMap<String, usize>,
 }
 
 #[derive(Deserialize)]
