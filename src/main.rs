@@ -207,7 +207,8 @@ fn render_calendar(
                     .get(5..7)
                     .and_then(|value| value.parse::<u32>().ok())
                     .unwrap_or(1)
-                    - 1,
+                    .saturating_sub(1)
+                    .min(11),
             )
         })
         .unwrap_or((2026, 0));
@@ -274,12 +275,46 @@ struct ReportQuery {
     boss: Option<String>,
     mode: Option<String>,
     attempt: Option<String>,
+    #[serde(default, deserialize_with = "query_number")]
+    s: Option<u64>,
+    #[serde(default, deserialize_with = "query_number")]
+    f: Option<u64>,
+    #[serde(default, deserialize_with = "query_number")]
+    sc: Option<u64>,
+    #[serde(default, deserialize_with = "query_number")]
+    fc: Option<u64>,
 }
 
-fn select(encounters: &[Encounter], query: &ReportQuery) -> Vec<Encounter> {
+fn query_number<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u64>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Value {
+        Number(u64),
+        Text(String),
+    }
+    Ok(match Option::<Value>::deserialize(deserializer)? {
+        Some(Value::Number(number)) => Some(number),
+        Some(Value::Text(text)) => text.parse().ok(),
+        None => None,
+    })
+}
+
+fn select(report: &mut Report, query: &ReportQuery) -> io::Result<Vec<Encounter>> {
+    if query
+        .boss
+        .as_deref()
+        .is_none_or(|value| value.is_empty() || value == "custom")
+        && let (Some(start), Some(end)) = (query.s, query.f)
+    {
+        return Ok(report.time_slice(start..end)?.into_iter().collect());
+    }
     let attempt = query.attempt.as_deref().unwrap_or_default();
     let number = attempt.parse::<usize>().ok();
-    let mut selected = encounters
+    let mut selected = report
+        .metadata
+        .encounters
         .iter()
         .filter(|encounter| {
             query
@@ -296,9 +331,25 @@ fn select(encounters: &[Encounter], query: &ReportQuery) -> Vec<Encounter> {
         .cloned()
         .collect::<Vec<_>>();
     if attempt == "kill" {
-        return selected.pop().into_iter().collect();
+        selected = selected.pop().into_iter().collect();
     }
-    selected
+    if (query.sc.is_some() || query.fc.is_some()) && selected.len() == 1 {
+        let window = &selected[0];
+        let start = window.start_second.saturating_add(query.sc.unwrap_or(0));
+        let end = query.fc.map_or(window.end_second, |offset| {
+            window.start_second.saturating_add(offset)
+        });
+        let end = end.min(window.end_second);
+        if let Some(mut selection) = report.time_slice(start..end)? {
+            selection.boss.clone_from(&selected[0].boss);
+            selection.boss_slug.clone_from(&selected[0].boss_slug);
+            selection.difficulty.clone_from(&selected[0].difficulty);
+            selection.outcome.clone_from(&selected[0].outcome);
+            selection.attempt = selected[0].attempt;
+            selected = vec![selection];
+        }
+    }
+    Ok(selected)
 }
 
 async fn report_page(
@@ -310,7 +361,7 @@ async fn report_page(
     let path = uri.path().to_owned();
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
-        let selected = select(&report.metadata.encounters, &query);
+        let selected = select(&mut report, &query)?;
         let summary = aggregate(&mut report, &selected)?;
         let mut players = summary.players.into_values().collect::<Vec<_>>();
         players.sort_by_key(|player| std::cmp::Reverse(player.rates.totals.damage));
@@ -320,7 +371,7 @@ async fn report_page(
         }).collect::<Vec<_>>();
         app.render("rust_report.html", context! {
             request => context! { path }, REPORT_ID => &id, REPORT_NAME => &id,
-            encounters => encounter_links, players, duration => summary.duration_seconds, query => uri.query().map(|query| format!("?{query}")).unwrap_or_default(),
+            encounters => encounter_links, players, totals => summary.totals, duration => summary.duration_seconds, query => uri.query().map(|query| format!("?{query}")).unwrap_or_default(),
         })
     }).await
 }
@@ -352,7 +403,7 @@ async fn spell_page(
             });
         }
 
-        let windows = select(&report.metadata.encounters, &query).into_iter().map(|encounter| encounter.start..encounter.end).collect::<Vec<_>>();
+        let windows = select(&mut report, &query)?.into_iter().map(|encounter| encounter.start..encounter.end).collect::<Vec<_>>();
         let mut spells = player_spells(&mut report, &windows, &player)?.into_iter().collect::<Vec<_>>();
         spells.sort_by_key(|(_, spell)| std::cmp::Reverse(match view.as_str() {
             "heal" => spell.healing, "taken" => spell.taken, "casts" => spell.casts as i64, _ => spell.damage,
@@ -450,7 +501,7 @@ async fn render_section(
     blocking(move || {
         use uwu_logs::analysis::{self, View};
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
-        let selected = select(&report.metadata.encounters, &query);
+        let selected = select(&mut report, &query)?;
         let query = uri
             .query()
             .map(|query| format!("?{query}"))
@@ -535,7 +586,7 @@ async fn dps(
 ) -> Result<Json<std::collections::BTreeMap<String, f64>>, Error> {
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
-        let selected = select(&report.metadata.encounters, &query.selection);
+        let selected = select(&mut report, &query.selection)?;
         let interval = query
             .sec
             .and_then(|value| value.as_u64().or_else(|| value.as_str()?.parse().ok()))

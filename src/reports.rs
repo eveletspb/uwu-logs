@@ -1,3 +1,4 @@
+use crate::absorbs::RULES;
 use crate::combat::{CATALOG, Event, Stamp, guid_boss, normalize, player_guid, slug};
 use crate::storage::{ReportFile, ReportWriter, read_event};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -68,12 +69,75 @@ impl Metadata {
         }
         if player_guid(event.source)
             && !self.classes.contains_key(event.source)
-            && let Some(class) = crate::absorbs::RULES.class_book.get(event.spell)
+            && !RULES.flag_ignore_player_class.contains(event.kind)
+            && let Some(class) = RULES.class_book.get(event.spell)
         {
             self.classes.insert(event.source.into(), class.clone());
         }
-        if event.kind == "SPELL_SUMMON" && player_guid(event.source) {
-            self.units.get_mut(event.target).unwrap().master_guid = Some(event.source.into());
+        let summons = event.kind == "SPELL_SUMMON" && event.source != event.target;
+        let links_owner_to_pet = RULES.pet_filter_spells.contains(event.spell)
+            && player_guid(event.source)
+            && !player_guid(event.target);
+        let ownership = if summons || links_owner_to_pet {
+            Some((event.target, event.source))
+        } else if (RULES.pet_filter_spells.contains(event.spell) || event.spell == "34650")
+            && player_guid(event.target)
+            && !player_guid(event.source)
+        {
+            Some((event.source, event.target))
+        } else {
+            None
+        };
+        if let Some((pet, owner)) = ownership
+            && pet != crate::combat::NIL_GUID
+            && !RULES.boss_pets.contains(pet.get(6..12).unwrap_or_default())
+            && let Some(unit) = self.units.get_mut(pet)
+        {
+            unit.master_guid = Some(owner.into());
+        }
+    }
+
+    fn fill_pet_owners(&mut self) {
+        let mut owners = BTreeMap::<String, BTreeMap<String, usize>>::new();
+        for (guid, unit) in &self.units {
+            if guid.starts_with("0xF14")
+                && let Some(owner) = unit.master_guid.as_deref()
+                && player_guid(owner)
+            {
+                *owners
+                    .entry(guid[6..12].into())
+                    .or_default()
+                    .entry(owner.into())
+                    .or_default() += 1;
+            }
+        }
+        let owners = owners
+            .into_iter()
+            .filter_map(|(pet, owners)| {
+                owners
+                    .into_iter()
+                    .max_by_key(|(_, count)| *count)
+                    .map(|(owner, _)| (pet, owner))
+            })
+            .collect::<BTreeMap<_, _>>();
+        for (guid, unit) in &mut self.units {
+            if guid.starts_with("0xF14")
+                && let Some(owner) = owners.get(&guid[6..12])
+            {
+                unit.master_guid = Some(owner.clone());
+            }
+        }
+        let nested = self
+            .units
+            .iter()
+            .filter_map(|(guid, unit)| {
+                let owner = unit.master_guid.as_ref()?;
+                let master = self.units.get(owner)?.master_guid.as_ref()?;
+                (guid != master).then(|| (guid.clone(), master.clone()))
+            })
+            .collect::<Vec<_>>();
+        for (pet, owner) in nested {
+            self.units.get_mut(&pet).unwrap().master_guid = Some(owner);
         }
     }
 }
@@ -255,6 +319,78 @@ impl Report {
         }
     }
 
+    pub fn time_slice(&mut self, seconds: Range<u64>) -> io::Result<Option<Encounter>> {
+        if seconds.is_empty() {
+            return Ok(None);
+        }
+        let Some(rows) = self.row_count() else {
+            return Ok(None);
+        };
+        let mut first = None::<Stamp>;
+        self.visit(Some(0..rows.min(1)), |_, line| {
+            first = line
+                .split_once(',')
+                .and_then(|(stamp, _)| Stamp::parse(stamp));
+        })?;
+        let Some(first) = first else { return Ok(None) };
+        let split = |time| {
+            self.metadata
+                .time_index
+                .partition_point(|(second, _)| *second < time)
+        };
+        let start_index = split(seconds.start).saturating_sub(1);
+        let start = self
+            .metadata
+            .time_index
+            .get(start_index)
+            .map_or(0, |(_, row)| *row);
+        let end = self
+            .metadata
+            .time_index
+            .get(split(seconds.end))
+            .map_or(rows, |(_, row)| row.saturating_add(1).min(rows));
+        if start >= end {
+            return Ok(None);
+        }
+        let year = 2000 + self.id[..2].parse::<u32>().unwrap_or(0);
+        let mut found = None;
+        let mut last = None;
+        self.visit(Some(start..end), |row, line| {
+            let Some(stamp) = line
+                .split_once(',')
+                .and_then(|(stamp, _)| Stamp::parse(stamp))
+            else {
+                return;
+            };
+            let elapsed = stamp.relative_to(first, year).max(0) as u64;
+            if seconds.contains(&(elapsed / 1000)) {
+                found.get_or_insert((row, elapsed));
+                last = Some((row, elapsed));
+            }
+        })?;
+        Ok(found
+            .zip(last)
+            .map(|((start, first), (end, last))| Encounter {
+                boss: "Выделенный период".into(),
+                boss_slug: "custom".into(),
+                attempt: 0,
+                start,
+                end: end + 1,
+                difficulty: String::new(),
+                outcome: String::new(),
+                duration_seconds: last.saturating_sub(first) as f64 / 1000.0,
+                start_second: first / 1000,
+                end_second: last.div_ceil(1000),
+            }))
+    }
+
+    fn row_count(&self) -> Option<u64> {
+        match &self.source {
+            Source::Legacy(_) => (self.legacy_rows > 0).then_some(self.legacy_rows),
+            Source::Indexed(report) => Some(report.event_count()),
+        }
+    }
+
     pub fn copy_log(&mut self, mut output: impl Write) -> io::Result<()> {
         match &mut self.source {
             Source::Indexed(report) => report.read_events(0..report.event_count(), output),
@@ -329,6 +465,7 @@ impl Report {
         self.clock = first.zip(last);
         self.legacy_rows = rows;
         if recover_units {
+            rebuilt.fill_pet_owners();
             rebuilt.players.append(&mut self.metadata.players);
             rebuilt.classes.append(&mut self.metadata.classes);
             rebuilt.units.append(&mut self.metadata.units);
@@ -552,6 +689,7 @@ pub fn import_logs(
         let first = first
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no valid combat events"))?;
         metadata.encounters = pulls.finish();
+        metadata.fill_pet_owners();
         writer.finish(serde_json::to_value(&metadata).map_err(io::Error::other)?)?;
         file.flush()?;
         file.get_ref().sync_all()?;
@@ -592,7 +730,7 @@ fn id_component(value: &str) -> String {
         .chars()
         .take(25)
         .map(|ch| {
-            if ch.is_alphanumeric() || ch == ' ' || ch == '_' {
+            if ch.is_alphanumeric() || matches!(ch, ' ' | '_' | '-') {
                 ch
             } else {
                 '_'

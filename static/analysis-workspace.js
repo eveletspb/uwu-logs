@@ -33,10 +33,11 @@
     document.querySelectorAll('button[data-metric]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.metric === value)));
     if (value !== 'all') {
       const tbody = main.querySelector('.table-players tbody');
+      if (!tbody) return;
       const rows = Array.from(tbody.rows).slice(1);
       let column = value;
-      if (value === 'damage' && getComputedStyle(main.querySelector('th.useful')).display !== 'none') column = 'useful';
-      if (value === 'heal' && getComputedStyle(main.querySelector('th.heal_total')).display !== 'none') column = 'heal_total';
+      if (value === 'damage' && main.querySelector('th.useful') && getComputedStyle(main.querySelector('th.useful')).display !== 'none') column = 'useful';
+      if (value === 'heal' && main.querySelector('th.heal_total') && getComputedStyle(main.querySelector('th.heal_total')).display !== 'none') column = 'heal_total';
       const number = row => Number((row.querySelector('.total-cell.' + column)?.textContent || '0').replace(/[^\d.-]/g, ''));
       rows.sort((a, b) => number(b) - number(a)).forEach(row => tbody.append(row));
     }
