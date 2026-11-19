@@ -171,6 +171,17 @@ regardless of the encounter selected in the viewer.
 
 Omit `format` to receive the existing `.7z` archive for a standalone report
 when available. Otherwise the endpoint returns the text log.
+Request `GET /reports/<report_id>/download?format=json` for the versioned
+JSON summary. It covers all recorded boss attempts, including wipes, and
+excludes trash and time between attempts. Each encounter has its boss,
+difficulty, zero-based attempt, outcome, duration, viewer path, raid totals
+and players keyed by GUID. The top-level totals and players aggregate those
+attempts. `damage` is outgoing damage including attributed pets, `healing`
+is effective healing including attributed absorbs, `damage_taken` counts
+damage received by the character, and `deaths` counts player `UNIT_DIED`
+events. DPS, HPS and DTPS use the full attempt duration or the sum of all
+attempt durations for the report. Rates are null for zero duration.
+
 An unknown report returns HTTP 404. An unsupported format returns HTTP 400.
 
 ## Automatic remote export

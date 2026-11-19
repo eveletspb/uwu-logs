@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from flask import (
-    Flask, Response, request,
+    Flask, Response, jsonify, request,
     make_response,
     redirect,
     render_template,
@@ -295,8 +295,8 @@ def download_logs(report_id):
             raise TooManyRequests(retry_after=_limit)
     
     export_format = request.args.get("format")
-    if export_format not in (None, "txt"):
-        return "Supported download format: txt", 400
+    if export_format not in (None, "txt", "json"):
+        return "Supported download formats: txt, json", 400
 
     report = load_report(report_id)
     if export_format is None and not getattr(report, "parts", None):
@@ -306,6 +306,11 @@ def download_logs(report_id):
                 return send_file(archive, as_attachment=True)
 
     try:
+        if export_format == "json":
+            from report_summary import report_summary
+            response = jsonify(report_summary(report))
+            response.headers.set("Content-Disposition", "attachment", filename=f"{report_id}.json")
+            return response
         lines = report.LOGS
     except FileNotFoundError:
         raise NotFound() from None
