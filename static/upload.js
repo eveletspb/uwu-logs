@@ -67,7 +67,8 @@ class UploadProgress extends XMLHttpRequest {
     this.retries = 0;
     this.shown = false;
   }
-  get_progress() {
+  get_progress(activeOnly = false) {
+    this.activeOnly = activeOnly;
     this.open("GET", "/upload_progress");
     this.send();
   }
@@ -84,6 +85,7 @@ class UploadProgress extends XMLHttpRequest {
     this.shown = true;
   }
   retry() {
+    if (this.activeOnly) return;
     if (this.retries > 5) {
       PROGRESS_BAR.classList.add("error");
       PROGRESS_BAR_PERCENTAGE.textContent = "Server error!";
@@ -100,6 +102,9 @@ class UploadProgress extends XMLHttpRequest {
       return;
     }
     
+    const progress = this.status === 200 ? JSON.parse(this.response) : null;
+    if (this.activeOnly && progress?.done !== 0) return;
+    this.activeOnly = false;
     this.show();
 
     if (this.status == 502) {
@@ -114,12 +119,11 @@ class UploadProgress extends XMLHttpRequest {
   
     this.retries = 0;
     
-    const response_json = JSON.parse(this.response);
-    if (response_json.done == 0) {
+    if (progress.done === 0) {
       setTimeout(() => this.get_progress(), 250);
     }
-    new_status_msg(response_json.status);
-    add_parsed_slices(response_json.slices);
+    new_status_msg(progress.status);
+    add_parsed_slices(progress.slices);
   }
 }
 
@@ -249,8 +253,9 @@ class Upload extends XMLHttpRequest {
 FILE_SELECT.value = "";
 FILE_SELECT.accept = ALLOWED_EXTENSIONS.map(e => `.${e}`);
 FILE_SELECT.onchange = () => {
+  FILE_SUBMIT.disabled = true;
   const file = FILE_SELECT.files[0];
-  console.log(file);
+  if (!file) return;
   const ext = file.name.split('.').pop().toLowerCase();
   if (!ALLOWED_EXTENSIONS.includes(ext)) {
     alert('File is not an archive.\nPlease archive the file first.');
@@ -262,10 +267,11 @@ FILE_SELECT.onchange = () => {
     alert("Archive is too big.\nAre you sure it's the correct file?\nAre you sure you compressed it?");
     FILE_SELECT.value = "";
   }
+  FILE_SUBMIT.disabled = FILE_SELECT.files.length === 0;
 }
 
 const UPLOAD_PROGRESS = new UploadProgress();
-UPLOAD_PROGRESS.get_progress();
+UPLOAD_PROGRESS.get_progress(true);
 
 FILE_SUBMIT.onclick = () => {
   const _callback_on_finish = () => UPLOAD_PROGRESS.get_progress();
