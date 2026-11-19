@@ -1,8 +1,12 @@
 /* Analysis workspace: encounter navigation, metric, graph, table. Existing palette. */
 .analysis-workspace{display:grid;grid-template-columns:220px minmax(0,1fr);max-width:1800px;margin:0 auto;border-top:1px solid var(--line);min-height:calc(100vh - 235px)}
 .analysis-content{min-width:0;padding:0 20px 30px}
+.analysis-content:only-child{grid-column:1/-1}
 .analysis-content main{padding:18px 0;max-width:none}
 .analysis-content footer{border:0;border-bottom:1px solid var(--line);border-radius:0;padding:0;background:transparent;max-width:none;margin:0;min-height:44px;z-index:25}
+.analysis-content .report-nav{position:static;flex-wrap:wrap;height:auto;gap:4px;padding:0;margin-bottom:12px;background:transparent}
+.report-nav a{padding:6px 8px;font-size:12px;color:#9cb0c7}
+.report-nav a:hover{color:#72d6c8}
 .encounter-sidebar{background:#101823;border-right:1px solid var(--line);padding:16px 12px;min-width:0}
 .sidebar-heading{font-size:13px;font-weight:500;display:flex;justify-content:space-between;gap:8px;margin-bottom:14px}
 .sidebar-heading span{color:var(--muted);font-size:10px;font-weight:400}
