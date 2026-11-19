@@ -309,7 +309,9 @@ def download_logs(report_id):
         lines = report.LOGS
     except FileNotFoundError:
         raise NotFound() from None
-    response = Response((line + "\n" for line in lines), content_type="text/plain; charset=utf-8")
+    chunks = ("\n".join(lines[start:start + 1024]) + "\n"
+              for start in range(0, len(lines), 1024))
+    response = Response(chunks, content_type="text/plain; charset=utf-8")
     response.headers.set("Content-Disposition", "attachment", filename=f"{report_id}.txt")
     return response
 
