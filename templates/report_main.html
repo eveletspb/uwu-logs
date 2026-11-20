@@ -11,7 +11,7 @@
 {% endblock add_css_file %}
 
 {% block the_main %}
-<main id="report-main" data-duration="{{ DURATION }}" data-chart-duration="{{ GRAPH_DURATION|default(DURATION) }}"{% if RUST_VIEW %} data-local{% endif %}>
+<main id="report-main" data-duration="{{ DURATION }}" data-chart-duration="{{ GRAPH_DURATION|default(DURATION) }}" data-local>
   <div class="analysis-toolbar">
     <div class="metric-tabs" role="group" aria-label="Метрика">
       <button type="button" data-metric="all" aria-pressed="true">Сводка</button>
@@ -43,7 +43,7 @@
         </tr> 
       </thead>
       <tbody class="table-has-total">
-        {% for player_name, (spec_name, spec_icon) in (SPECS if RUST_VIEW else SPECS.items()) %}
+        {% for player_name, (spec_name, spec_icon) in SPECS %}
         <tr>
           <td class="player-cell" title="{{ spec_name }}">
             <img src="/static/icons/{{ spec_icon }}.jpg">
@@ -55,7 +55,7 @@
           </td>
           <td class="points points-rank total-cell"></td>
           <td class="points points-dps total-cell"></td>
-          {% for _type in (['useful', 'damage', 'heal', 'heal_total', 'taken'] if RUST_VIEW else DATA) %}
+          {% for _type in ['useful', 'damage', 'heal', 'heal_total', 'taken'] %}
           {% set players = DATA[_type] %}
           <td class="{{ _type }} rectangle-cell">
             {% if players.get(player_name) %}

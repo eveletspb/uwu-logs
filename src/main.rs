@@ -1046,7 +1046,6 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     templates.set_loader(path_loader(assets.join("templates")));
     templates.add_filter("urlencode", path_segment);
     report_view::configure_templates(&mut templates);
-    templates.add_global("RUST_VIEW", minijinja::Value::from(true));
     let root = root.canonicalize()?;
     let address = app_env("RAIDLEDGER_BIND", "UWU_BIND")
         .map(|address| address.to_string_lossy().into_owned())

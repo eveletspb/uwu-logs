@@ -79,7 +79,7 @@ td {
 
 {% block the_main %}
 <main id="deaths">
-  {% for death_id, death_data in (death_rows if RUST_VIEW else DEATHS.items()) %}
+  {% for death_id, death_data in death_rows %}
   <section class="death-section">
     <p class="panel-head">
       <input type="checkbox" id="{{ death_id }}">

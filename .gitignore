@@ -29,7 +29,6 @@ static/gear/
 temp/
 top/
 uploads/
-venv/
 
 # Local installation state and downloaded runtime assets
 auto-config.json
@@ -39,5 +38,4 @@ local-server.pid
 *.dll
 icons-pack.download
 LOCAL-README.txt
-requirements-installed.txt
 /target/

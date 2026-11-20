@@ -52,7 +52,7 @@
             <li>
               <a href="{{ diff_data.href }}" class="{{ diff_data.css_class }}">{{ diff_data.text }}</a>
               <ul class="segments">
-                {% for segment in (diff_data.segments if RUST_VIEW else diff_data) %}
+                {% for segment in diff_data.segments %}
                 <li>
                   <a href="{{ segment.href }}" class="{{ segment.css_class }}">{{ segment.segment_str }}</a>
                 </li>
@@ -124,7 +124,7 @@
     <details class="encounter-group" open>
       <summary>{{ boss.boss_name }}</summary>
       {% for difficulty in boss.by_difficulty.values() %}
-        {% for segment in (difficulty.segments if RUST_VIEW else difficulty) %}
+        {% for segment in difficulty.segments %}
         <a href="{{ segment.href }}" class="encounter-attempt {{ segment.css_class }}"><span class="attempt-state">{{ 'Убийство' if 'kill' in segment.css_class else 'Вайп' }}</span><span>{{ segment.segment_str }}</span></a>
         {% endfor %}
       {% endfor %}

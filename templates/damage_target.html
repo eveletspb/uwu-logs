@@ -43,7 +43,7 @@ img {
         <thead>
           <tr>
             <th class="player-cell"></th>
-            {% for _th in (target_columns if RUST_VIEW else TARGETS) %}
+            {% for _th in target_columns %}
             <th>{{ _th }}</th>
             {% endfor %}
           </tr>
@@ -59,7 +59,7 @@ img {
               <a class="{{ SPECS[player_guid]['class'] }}" href="/reports/{{ REPORT_ID }}/player/{{ SPECS[player_guid]['name'] }}/{{ QUERY }}">{{ SPECS[player_guid]['name'] }}</a>
               {% endif %}
             </td>
-            {% for target in (target_columns if RUST_VIEW else TARGETS) %}
+            {% for target in target_columns %}
             <td class="total-cell">{{ TARGETS[target][player_guid] }}</td>
             {% endfor %}
           </tr>

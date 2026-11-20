@@ -37,7 +37,7 @@ section {
 {% block the_main %}
 <main id="auras">
 <section>
-  {% for category, guids in (entity_groups if RUST_VIEW else ENTITIES.items()) %}
+  {% for category, guids in entity_groups %}
   <div>
   <table>
     <thead>

@@ -37,8 +37,8 @@ approximate uptime marker. Auras with no recorded events cannot be recovered.
 
 ### Combat-log import
 
-Automatic recording uses DBM boss encounters. Import and 30-day cleanup run
-after WoW closes; manual import is also available.
+Automatic recording uses DBM boss encounters. Import runs after WoW closes;
+manual import is also available. Reports and log archives are retained.
 
 ![Local combat-log import page](showcase/redesign/log-import.jpg)
 
