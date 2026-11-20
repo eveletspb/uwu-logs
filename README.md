@@ -1,3 +1,5 @@
+<img src="static/favicon.png" width="72" height="72" alt="RaidLedger icon">
+
 # RaidLedger
 
 RaidLedger is a self-hosted combat log analyzer for World of Warcraft 3.3.5a.
@@ -5,7 +7,7 @@ Import a log and browse the raid, boss attempts, and individual player
 performance in your browser. The Rust server handles imports, report storage,
 and exports. Reports are stored on the machine running RaidLedger.
 
-[Quick start](#quick-start) · [Automatic import](#automatic-import-and-remote-viewing) · [Docker](#docker) · [Report storage](#report-storage-and-migration) · [Downloads](#downloads-and-json-metrics) · [Rankings](#rankings-and-pve-statistics)
+[Screenshots](#screenshots) · [Quick start](#quick-start) · [Automatic import](#automatic-import-and-remote-viewing) · [Docker](#docker) · [Report storage](#report-storage-and-migration) · [Downloads](#downloads-and-json-metrics) · [Rankings](#rankings-and-pve-statistics)
 
 ## Explore a raid
 
@@ -28,6 +30,22 @@ and exports. Reports are stored on the machine running RaidLedger.
   event. The cast count tooltip distinguishes attempts from recorded successes.
 - **Search and comparison.** Find spells by name and compare players of the same
   class within a report.
+
+## Screenshots
+
+The screenshots show anonymized example reports.
+
+**Raid library**
+
+![Raid library with recent reports and boss kill progress](showcase/raidledger/raid-library.png)
+
+**Raid report**
+
+![Boss attempts, a raid damage chart, and player performance in a raid report](showcase/raidledger/raid-report.png)
+
+**Player timeline**
+
+![Player casts, buffs, and damage plotted across a boss attempt](showcase/raidledger/player-timeline.png)
 
 ## Quick start
 
