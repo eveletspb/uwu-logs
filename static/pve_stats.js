@@ -1,3 +1,5 @@
+import { bossName } from "./boss_names.js?v=1";
+
 const BOSSES = {
   "Icecrown Citadel": [
     "The Lich King",
@@ -71,7 +73,7 @@ function new_option(value, index) {
 
 function add_bosses() {
   remove_children(SELECT_BOSS);
-  BOSSES[SELECT_INSTANCE.value].forEach(boss_name => SELECT_BOSS.appendChild(new_option(boss_name)));
+  BOSSES[SELECT_INSTANCE.value].forEach(boss_name => SELECT_BOSS.add(new Option(bossName(boss_name), boss_name)));
 };
 
 function make_query() {
@@ -196,7 +198,7 @@ function search_changed() {
   if (xrequest.readyState != 4 && xrequest.readyState != 0) return;
 
   const difficulty = CHECKBOX_DIFFICULTY.checked ? 'H' : "N";
-  const title = `RaidLedger - PvE Statistics - ${SELECT_BOSS.value} - ${SELECT_SIZE.value}${difficulty}`;
+  const title = `RaidLedger - PvE Statistics - ${bossName(SELECT_BOSS.value)} - ${SELECT_SIZE.value}${difficulty}`;
   document.title = title;
 
   const parsed = {

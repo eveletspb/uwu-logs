@@ -1,3 +1,5 @@
+import { bossName } from "./boss_names.js?v=1";
+
 const LADDER_PAGE = document.getElementById("ladder-page");
 const ARMORY_SERVERS = JSON.parse(LADDER_PAGE.dataset.armory).map(server => server.toLowerCase());
 import {
@@ -235,7 +237,7 @@ function add_row(data) {
   
   const _fight_name = data[KEYS.fight_name];
   const fight_name = _fight_name != "" ? _fight_name : "Sister Svalna";
-  add_cell(row, fight_name, "boss");
+  add_cell(row, bossName(fight_name), "boss");
   
   add_cell(row, data[KEYS.size], "size");
   

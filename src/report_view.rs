@@ -42,7 +42,7 @@ fn attempt(fight: &Encounter) -> Value {
         href => fight.query(),
         css_class => format!("{}-link", fight.outcome),
         segment_str => format!("{duration} | {}", attempt_type(fight)),
-        segment_full_str => format!("{duration} | {} | {}", fight.difficulty, fight.boss)
+        segment_label => format!("{duration} | {}", fight.difficulty), boss_name => &fight.boss
     }
 }
 
@@ -103,12 +103,14 @@ pub fn context(
                 (
                     mode,
                     context! { href => format!("?boss={}&mode={mode}", first.boss_slug),
-                    text => format!("{mode} {}", first.boss), css_class => "boss-link", segments },
+                    mode, css_class => "boss-link", segments },
                 )
             })
             .collect::<BTreeMap<_, _>>();
-        links.push(context! { boss_name => &first.boss, href => format!("?boss={}", first.boss_slug),
-            text => format!("All {} segments", first.boss), css_class => "boss-link", by_difficulty });
+        links.push(
+            context! { boss_name => &first.boss, href => format!("?boss={}", first.boss_slug),
+            css_class => "boss-link", by_difficulty },
+        );
     }
     let kills = report
         .metadata

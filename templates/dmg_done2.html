@@ -153,7 +153,7 @@ option {
     {% for group_name, targets in TARGETS.items() %}
     <optgroup label="{{ group_name }}">
       {% for guid_id, target_name in targets.items() %}
-      <option value="{{ guid_id }}" class="{{ PLAYER_CLASSES[target_name] }}">{{ target_name }}</option>
+      <option value="{{ guid_id }}" class="{{ PLAYER_CLASSES[target_name] }}"{% if not PLAYER_CLASSES[target_name] %} data-boss-label{% endif %}>{{ target_name }}</option>
       {% endfor %}
     </optgroup>
     {% endfor %}

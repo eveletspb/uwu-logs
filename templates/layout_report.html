@@ -23,7 +23,7 @@
 {% if SEGMENTS_LINKS %}
 <div id="top-row-wrap">
   <h2 id="report-slice">
-    <a href="/reports/{{ REPORT_ID }}/{{ QUERY_NO_CUSTOM }}"><span id="slice-dur">{{ DURATION_STR }}</span><span id="slice-name">{{ SLICE_NAME }}</span><span id="slice-tries">{{ SLICE_TRIES }}</span></a>
+    <a href="/reports/{{ REPORT_ID }}/{{ QUERY_NO_CUSTOM }}"><span id="slice-dur">{{ DURATION_STR }}</span><span id="slice-name" data-boss-label data-boss="{{ SLICE_NAME }}">{{ SLICE_NAME }}</span><span id="slice-tries">{{ SLICE_TRIES }}</span></a>
   </h2>
   <div id="fights-container-wrap">
     <h1><a href="/reports/{{ REPORT_ID }}">{{ REPORT_NAME }}</a></h1>
@@ -33,7 +33,7 @@
       <ul class="bosses">
         {% for segment in SEGMENTS_KILLS %}
         <li>
-          <a href="{{ segment.href }}" class="{{ segment.css_class}}">{{ segment.segment_full_str }}</a>
+          <a href="{{ segment.href }}" class="{{ segment.css_class}}">{{ segment.segment_label }} | <span data-boss-label>{{ segment.boss_name }}</span></a>
         </li>
         {% endfor %}
       </ul>
@@ -44,11 +44,11 @@
       <ul class="bosses">
         {% for boss_segments in SEGMENTS_LINKS %}
         <li>
-          <a href="{{ boss_segments.href }}" class="{{ boss_segments.css_class }}">{{ boss_segments.text }}</a>
+          <a href="{{ boss_segments.href }}" class="{{ boss_segments.css_class }}">{% if boss_segments.boss_name == 'all' %}{{ boss_segments.text }}{% else %}All <span data-boss-label>{{ boss_segments.boss_name }}</span> segments{% endif %}</a>
           <ul class="diffs">
             {% for diff_data in boss_segments.by_difficulty.values() %}
             <li>
-              <a href="{{ diff_data.href }}" class="{{ diff_data.css_class }}">{{ diff_data.text }}</a>
+              <a href="{{ diff_data.href }}" class="{{ diff_data.css_class }}">{{ diff_data.mode }} <span data-boss-label>{{ boss_segments.boss_name }}</span></a>
               <ul class="segments">
                 {% for segment in diff_data.segments %}
                 <li>
@@ -120,7 +120,7 @@
   <div class="encounter-list">
   {% for boss in SEGMENTS_LINKS if boss.boss_name != 'all' %}
     <details class="encounter-group" open>
-      <summary>{{ boss.boss_name }}</summary>
+      <summary data-boss-label>{{ boss.boss_name }}</summary>
       {% for difficulty in boss.by_difficulty.values() %}
         {% for segment in difficulty.segments %}
         <a href="{{ segment.href }}" class="encounter-attempt {{ segment.css_class }}"><span class="attempt-state">{{ 'Убийство' if 'kill' in segment.css_class else 'Вайп' }}</span><span>{{ segment.segment_str }}</span></a>

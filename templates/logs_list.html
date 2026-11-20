@@ -159,7 +159,9 @@ select > option {
 {% endblock the_main %}
 
 {% block the_scripts %}
-<script>
+<script type="module">
+import { bossName } from "/static/boss_names.js?v=1";
+
 (function(){
 const SELECT_MONTH = document.getElementById("select-month");
 const SELECT_YEAR = document.getElementById("select-year");
@@ -171,7 +173,13 @@ const INPUT_PLAYER = document.getElementById("input-player");
 const INPUT_AUTHOR = document.getElementById("input-author");
 
 const CURRENT_QUERY = new URLSearchParams(window.location.search);
-INPUT_FIGHT.value = CURRENT_QUERY.get("fight");
+const fightKeys = new Map();
+for (const option of document.getElementById("fight-list").options) {
+  const key = option.value;
+  option.value = bossName(key);
+  fightKeys.set(option.value.toLowerCase(), key);
+}
+INPUT_FIGHT.value = bossName(CURRENT_QUERY.get("fight") ?? "");
 INPUT_PLAYER.value = CURRENT_QUERY.get("player");
 INPUT_AUTHOR.value = CURRENT_QUERY.get("author");
 
@@ -203,7 +211,7 @@ function new_request() {
     author: INPUT_AUTHOR.value,
     server: SELECT_SERVER.value,
     player: INPUT_PLAYER.value,
-    fight: INPUT_FIGHT.value,
+    fight: fightKeys.get(INPUT_FIGHT.value.trim().toLowerCase()) ?? INPUT_FIGHT.value,
   };
   for (const key in query_obj) {
     if (!query_obj[key]) delete query_obj[key];

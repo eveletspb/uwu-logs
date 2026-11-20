@@ -110,7 +110,7 @@ function make_rank_data() {
   return data;
 }
 function send_ranks_request() {
-  const fight_name = document.getElementById("slice-name")?.textContent;
+  const fight_name = document.getElementById("slice-name")?.dataset.boss;
   if (!fight_name || IGNORED_ENCOUNTERS.includes(fight_name)) return;
 
   const fight_mode = document.getElementById("slice-tries")?.textContent.trim().split(/\s+/)[0];

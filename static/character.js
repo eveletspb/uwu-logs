@@ -1,3 +1,4 @@
+import { bossName } from "./boss_names.js?v=1";
 import Gear from "./char_parser.js?v=7";
 import { SPECS } from "./constants.js?v=240830-1";
 
@@ -248,7 +249,7 @@ function add_dummy_cells(tr) {
 function row(boss_name, data) {
   const tr = document.createElement("tr");
   tr.setAttribute("role", "row");
-  tr.appendChild(cell(boss_name, "profile-boss-name"));
+  tr.appendChild(cell(bossName(boss_name), "profile-boss-name"));
   if (!data["rank_players"]) {
     add_dummy_cells(tr);
     return tr;

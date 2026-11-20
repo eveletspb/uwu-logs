@@ -7,6 +7,8 @@ import {
   MONTHS,
 } from "./constants.js?v=240909-1";
 
+import { bossName } from "./boss_names.js?v=1";
+
 const BOSSES = {...LEGACY_BOSSES};
 for (const [raid, bosses] of Object.entries(JSON.parse(document.getElementById('ranking-raids').textContent))) {
   BOSSES[raid] = [...new Set([...(BOSSES[raid] || []), ...bosses])];
@@ -749,7 +751,7 @@ function fetch_column(event) {
 
 function push_new_state() {
   const mode = selected_difficuty();
-  const title = `RaidLedger - Top - ${SELECT_BOSS.value} - ${mode}`;
+  const title = `RaidLedger - Top - ${bossName(SELECT_BOSS.value)} - ${mode}`;
   document.title = title;
 
   const parsed = {
@@ -868,7 +870,7 @@ function new_option(value, index) {
 
 function on_change_instance() {
   SELECT_BOSS.innerHTML = "";
-  BOSSES[SELECT_RAID.value].forEach(boss_name => SELECT_BOSS.appendChild(new_option(boss_name)));
+  BOSSES[SELECT_RAID.value].forEach(boss_name => SELECT_BOSS.add(new Option(bossName(boss_name), boss_name)));
 
   const _speedrun_selected = speedrun_selected();
   IRRELEVANT_FOR_SPEEDRUN.forEach(e => e.disabled = _speedrun_selected);

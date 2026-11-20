@@ -28,6 +28,10 @@
   {% block main_foot %}{% endblock main_foot %}
   {% block the_main %}{% endblock the_main %}
   {% if REPORT_ID %}</div></div><script src="/static/analysis-workspace.js?v=3" defer></script>{% endif %}
+  <script type="module">
+    import { localizeBossLabels } from "/static/boss_names.js?v=1";
+    localizeBossLabels();
+  </script>
   {% block main_scripts %}{% endblock main_scripts %}
   {% block the_scripts %}{% endblock the_scripts %}
 </body>

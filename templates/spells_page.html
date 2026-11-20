@@ -64,7 +64,7 @@ th > a {
               <th class="player-cell"></th>
               {% for target_name in TARGETS %}
               <th>
-                <a {% if target_name in PLAYER_CLASSES %}class="{{ PLAYER_CLASSES[target_name] }}"{% endif %} href="/reports/{{ REPORT_ID }}/player/{{ target_name }}/{{ QUERY }}">{{ target_name }}</a>
+                <a {% if target_name in PLAYER_CLASSES %}class="{{ PLAYER_CLASSES[target_name] }}"{% else %}data-boss-label{% endif %} href="/reports/{{ REPORT_ID }}/player/{{ target_name }}/{{ QUERY }}">{{ target_name }}</a>
               </th>
               {% endfor %}
             </tr>

@@ -12,7 +12,7 @@
 <section class="table-wrap" aria-label="Последние отчёты">
 <table class="recent-table"><thead><tr><th>Рейд</th><th>Сервер</th><th>Начало</th><th>Прогресс</th><th>Игроки</th><th></th></tr></thead><tbody>
 {% for report in LOCAL_REPORTS %}
-<tr><td><a class="recent-title" href="/reports/{{ report.id }}/" title="{{ report.fights }}">{{ report.raid_label }}</a><span class="recent-caption">Автор: {{ report.author }}</span></td><td><span class="server-pill">{{ report.server }}</span></td><td><time class="report-date" datetime="{{ report.datetime }}" title="{{ report.year }}"><strong>{{ report.time }}</strong><span>{{ report.date }}</span></time></td><td><span class="raid-progress" title="{{ report.progress_note }}">{{ report.progress }}</span>{% if '≥' in report.progress %}<span class="recent-caption">по логу</span>{% endif %}</td><td>{{ report.players }}</td><td><a class="open-report" href="/reports/{{ report.id }}/">Открыть →</a></td></tr>
+<tr><td><a class="recent-title" href="/reports/{{ report.id }}/" data-boss-title title="{{ report.fights }}">{{ report.raid_label }}</a><span class="recent-caption">Автор: {{ report.author }}</span></td><td><span class="server-pill">{{ report.server }}</span></td><td><time class="report-date" datetime="{{ report.datetime }}" title="{{ report.year }}"><strong>{{ report.time }}</strong><span>{{ report.date }}</span></time></td><td><span class="raid-progress" title="{{ report.progress_note }}">{{ report.progress }}</span>{% if '≥' in report.progress %}<span class="recent-caption">по логу</span>{% endif %}</td><td>{{ report.players }}</td><td><a class="open-report" href="/reports/{{ report.id }}/">Открыть →</a></td></tr>
 {% endfor %}
 </tbody></table></section>
 {% else %}
