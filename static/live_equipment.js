@@ -100,15 +100,14 @@ export function showLiveEquipment(profile, signal) {
     tooltip.hidden = true;
   }
 
-  function show(button, contents) {
-    if (active === button) return;
-    hide();
-    active = button;
-    tooltip.replaceChildren(...contents);
-    tooltip.hidden = false;
-    button.setAttribute("aria-describedby", tooltip.id);
+  function position() {
+    if (!active) return;
 
-    const anchor = button.getBoundingClientRect();
+    const anchor = active.getBoundingClientRect();
+    if (anchor.bottom <= 0 || anchor.top >= innerHeight) {
+      hide();
+      return;
+    }
     const {offsetWidth: width, offsetHeight: height} = tooltip;
     const nextToItem = anchor.right + width + 12 < innerWidth;
     const x = nextToItem ? anchor.right + 8 : anchor.left;
@@ -117,6 +116,16 @@ export function showLiveEquipment(profile, signal) {
     const top = !nextToItem && y + height > innerHeight && anchor.top >= height + 8
       ? anchor.top - height - 8 : y;
     tooltip.style.top = `${Math.max(8, Math.min(top, innerHeight - height - 8))}px`;
+  }
+
+  function show(button, contents) {
+    if (active === button) return;
+    hide();
+    active = button;
+    tooltip.replaceChildren(...contents);
+    tooltip.hidden = false;
+    button.setAttribute("aria-describedby", tooltip.id);
+    position();
   }
 
   list.replaceChildren(...profile.equipment.map(item => {
@@ -152,8 +161,8 @@ export function showLiveEquipment(profile, signal) {
   document.addEventListener("keydown", event => {
     if (event.key === "Escape" && active) hide();
   }, {signal});
-  window.addEventListener("scroll", hide, {signal, passive: true});
-  window.addEventListener("resize", hide, {signal});
+  window.addEventListener("scroll", position, {signal, passive: true});
+  window.addEventListener("resize", position, {signal});
   signal.addEventListener("abort", hide, {once: true});
   document.getElementById("live-equipment").hidden = false;
 }

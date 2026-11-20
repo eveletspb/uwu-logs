@@ -179,6 +179,7 @@
 .equipment-item:focus-visible {
   background: var(--hover-row);
   box-shadow: none;
+  text-shadow: none;
 }
 
 .equipment-item:focus-visible {
