@@ -1,234 +1,201 @@
-const main = document.querySelector("main");
-// const REPORT_ID = main.getAttribute("data-report-id");
-const SOURCE_NAME = main.getAttribute("data-source-name");
-const TOGGLE_GRAPH = document.getElementById('toggle-graph');
-const SELECT_SLICE_SECONDS = document.getElementById("sliced-sec");
-const CHART_ELEMENT_WRAP = document.getElementById("chart-wrap");
-const CONTROLS_WRAP = document.getElementById("controls-wrap");
-const CHART_OVERLAY = document.getElementById('overlay');
-const MAIN_CANVAS = document.getElementById('chart');
-const RANGE_MIN = document.querySelector(".range-values .min-value");
-const RANGE_MAX = document.querySelector(".range-values .max-value");
-const RANGE_TOTAL = document.querySelector(".range-values .total-value");
-const selectionContext = CHART_OVERLAY.getContext('2d');
-const SUMBIT = document.querySelector(".min-max-slider-submit");
+(() => {
+  const main = document.querySelector('main');
+  const canvas = document.getElementById('chart');
+  const intervals = document.getElementById('sliced-sec');
+  const toggle = document.getElementById('toggle-graph');
+  const apply = document.querySelector('.min-max-slider-submit');
+  const status = document.createElement('p');
+  status.setAttribute('role', 'status');
+  document.getElementById('chart-wrap').before(status);
 
-const REPORT_ID = window.location.pathname.split('/')[2];
-const SELECTION_COLOR = "#67d2c6";
-const SELECTION_ALPHA = 0.1;
+  const query = new URLSearchParams(location.search);
+  const duration = Math.ceil(Number(main.dataset.chartDuration) || 0);
+  const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+  const format = seconds => {
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`;
+  };
+  const offset = (key, fallback) => {
+    const value = query.get(key);
+    return value !== null && /^\d+$/.test(value) ? clamp(Number(value), 0, duration) : fallback;
+  };
+  let start = offset('sc', 0), end = offset('fc', duration);
+  let times = [], drag = null, request = 0, loading = false;
+  const cache = new Map();
 
-const CACHED_GRAPHS = {};
-const GET_DPS_REQUEST = new XMLHttpRequest();
-const QUERY_PARAMS = new URLSearchParams(window.location.search);
-const start = Number(QUERY_PARAMS.get("s") ?? 0);
-const end = Number(QUERY_PARAMS.get("f") ?? main.dataset.duration ?? 0);
-const start_custom = QUERY_PARAMS.get("sc") ?? 0;
-const duration = Number(main.dataset.duration ?? (end - start));
-const end_custom = QUERY_PARAMS.get("fc") ?? duration;
-const selection = {
-  w: 0,
-  startX: 0,
-  startIndex: start_custom / Math.max(Number(SELECT_SLICE_SECONDS.value), 1),
-  lastIndex: end_custom / Math.max(Number(SELECT_SLICE_SECONDS.value), 1),
-  drag: false,
-};
-const CHART_OPTIONS = {
-  maintainAspectRatio: false,
-  responsive: true,
-  animation: false,
-  interaction: {
-    mode: 'index',
-  },
-  plugins: {
-    tooltip: {
-      intersect: false,
+  const chart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [{
+        data: [],
+        cubicInterpolationMode: 'monotone',
+        borderColor: '#67d2c6',
+        pointRadius: 0,
+        pointBorderWidth: 0,
+      }],
     },
-    legend: {
-      display: false,
-    },
-  },
-  scales: {
-    x: {
-      grid: {
-        color: '#141414',
-        tickLength: 1,
+    options: {
+      maintainAspectRatio: false,
+      responsive: true,
+      animation: false,
+      interaction: { mode: 'index' },
+      plugins: { tooltip: { intersect: false }, legend: { display: false } },
+      scales: {
+        x: { grid: { color: '#141414', tickLength: 1 } },
+        y: {
+          grid: { color: '#141414', tickLength: 1 },
+          title: { display: true, text: 'DPS' },
+          ticks: { padding: 0 },
+        },
       },
     },
-    y: {
-      grid: {
-        color: '#141414',
-        tickLength: 1,
+    plugins: [{
+      id: 'raidledgerPeriod',
+      beforeDatasetsDraw({ ctx, chartArea, scales }) {
+        if (times.length < 2 || loading || start === end) return;
+        const left = pixelForTime(scales.x, Math.min(start, end));
+        const right = pixelForTime(scales.x, Math.max(start, end));
+        ctx.save();
+        ctx.globalAlpha = 0.1;
+        ctx.fillStyle = '#67d2c6';
+        ctx.fillRect(left, chartArea.top, right - left, chartArea.bottom - chartArea.top);
+        ctx.restore();
       },
-      title: {
-        display: true,
-        text: 'DPS',
-      },
-      ticks: {
-        padding: 0,
-      },
-    },
-  },
-};
-const CHART = new Chart(MAIN_CANVAS, {
-  type: 'line',
-  options: CHART_OPTIONS,
-});
-
-function make_new_dataset(datapoints) {
-  return {
-    data: datapoints,
-    cubicInterpolationMode: 'monotone',
-    borderColor: '#67d2c6',
-    pointRadius: 0,
-    pointBorderWidth: 0,
-  }
-}
-
-function chartSetData(datapoints) {
-  graphStatus.textContent = Object.keys(datapoints).length ? '' : 'Нет событий урона за выбранный период.';
-  if (Object.keys(datapoints).length === 0) return;
-
-  const datapoints_values = Object.values(datapoints);
-  const datapoints_min = Math.min(...datapoints_values);
-  const datapoints_max = Math.max(...datapoints_values);
-  CHART.options.scales.y.min = Math.floor(datapoints_min);
-  CHART.options.scales.y.max = Math.ceil(datapoints_max);
-  CHART.data.datasets[0] = make_new_dataset(datapoints);
-  CHART.update();
-  selection.startIndex = start_custom / Math.max(Number(SELECT_SLICE_SECONDS.value), 1);
-  selection.lastIndex = end_custom / Math.max(Number(SELECT_SLICE_SECONDS.value), 1);
-  set_text_range();
-  setTimeout(() => {
-    CHART_OVERLAY.width = MAIN_CANVAS.width;
-    CHART_OVERLAY.height = MAIN_CANVAS.height;
-    selectionContext.fillStyle = SELECTION_COLOR;
-    selectionContext.globalAlpha = SELECTION_ALPHA;
-    
-    const w = CHART.chartArea.right - CHART.chartArea.left;
-    selection.w = (end_custom - start_custom) / Math.max(duration, 1) * w;
-    selection.startX = CHART.chartArea.left + start_custom / Math.max(duration, 1) * w;
-    console.log(selection);
-    selectionContext.fillRect(
-      selection.startX,
-      0,
-      selection.w,
-      CHART.chartArea.bottom - CHART.chartArea.top
-    );
+    }],
   });
-}
 
-GET_DPS_REQUEST.onreadystatechange = () => {
-  if (GET_DPS_REQUEST.readyState != 4) return;
-  if (GET_DPS_REQUEST.status != 200) {
-    graphStatus.textContent = 'Не удалось загрузить график. Попробуй открыть его снова.';
-    return;
+  function pixelForTime(scale, seconds) {
+    let lo = 0, hi = times.length - 1;
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (times[mid] <= seconds) lo = mid;
+      else hi = mid;
+    }
+    const fraction = clamp((seconds - times[lo]) / (times[hi] - times[lo]), 0, 1);
+    const left = scale.getPixelForValue(lo);
+    return left + fraction * (scale.getPixelForValue(hi) - left);
   }
-  
-  const datapoints = JSON.parse(GET_DPS_REQUEST.response);
-  CACHED_GRAPHS[SELECT_SLICE_SECONDS.value] = datapoints;
-  chartSetData(datapoints);
-}
 
-function send_post() {
-  graphStatus.textContent = 'Загрузка графика…';
-  const params_obj = Object.fromEntries(QUERY_PARAMS);
-  params_obj["player_name"] = SOURCE_NAME;
-  params_obj["sec"] = SELECT_SLICE_SECONDS.value;
-  const END_POINT = `/reports/${REPORT_ID}/get_dps`;
-  GET_DPS_REQUEST.open("POST", END_POINT);
-  GET_DPS_REQUEST.setRequestHeader("Content-Type", "application/json");
-  GET_DPS_REQUEST.send(JSON.stringify(params_obj));
-}
+  function updateRange() {
+    document.querySelector('.range-values .min-value').textContent = format(Math.min(start, end));
+    document.querySelector('.range-values .max-value').textContent = format(Math.max(start, end));
+    document.querySelector('.range-values .total-value').textContent = `(${format(Math.abs(start - end))})`;
+    apply.disabled = loading || times.length < 2 || start === end;
+  }
 
-function toggle_graph() {
-  if (!TOGGLE_GRAPH.checked) return;
+  function drawData(data) {
+    const points = Object.entries(data).map(([label, value]) => {
+      const [minutes, seconds] = label.split(':').map(Number);
+      return [minutes * 60 + seconds, value];
+    }).sort((a, b) => a[0] - b[0]);
+    let min = Infinity, max = -Infinity;
+    for (const [, value] of points) {
+      min = Math.min(min, value);
+      max = Math.max(max, value);
+    }
+    times = points.map(([seconds]) => seconds);
+    chart.data.labels = times.map(format);
+    chart.data.datasets[0].data = points.map(([, value]) => value);
+    chart.options.scales.y.min = points.length ? Math.floor(min) : undefined;
+    chart.options.scales.y.max = points.length ? Math.ceil(max) : undefined;
+    chart.update();
+    updateRange();
+  }
 
-  const data = CACHED_GRAPHS[SELECT_SLICE_SECONDS.value];
-  data ? chartSetData(data) : send_post();
-}
+  async function load() {
+    const current = ++request;
+    loading = false;
+    if (!toggle.checked) return;
+    const sec = intervals.value;
+    if (cache.has(sec)) {
+      status.textContent = '';
+      drawData(cache.get(sec));
+      return;
+    }
+    loading = true;
+    status.textContent = 'Загрузка графика…';
+    updateRange();
+    try {
+      const body = Object.fromEntries(query);
+      delete body.sc;
+      delete body.fc;
+      body.player_name = main.dataset.sourceName;
+      body.sec = sec;
+      const id = location.pathname.split('/')[2];
+      const response = await fetch(`/reports/${id}/get_dps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error(response.status);
+      const data = await response.json();
+      if (current !== request) return;
+      if (Object.keys(data).length) cache.set(sec, data);
+      loading = false;
+      status.textContent = Object.keys(data).length ? '' : 'Нет событий урона за выбранный период.';
+      drawData(data);
+    } catch (_) {
+      if (current !== request) return;
+      loading = false;
+      status.textContent = 'Не удалось загрузить график. Попробуй открыть его снова.';
+      drawData({});
+    }
+  }
 
-function time_to_text(t) {
-  t = Math.max(0, Math.round(Number(t) || 0));
-  const minutes = `${Math.floor(t/60)}`.padStart(2, '0');
-  const seconds = `${t%60}`.padStart(2, '0');
-  return `${minutes}:${seconds}`
-}
-function set_text_range() {
-  const mult = Math.max(SELECT_SLICE_SECONDS.value, 1);
-  const _min = Math.min(selection.startIndex, selection.lastIndex) * mult;
-  const _max = Math.max(selection.startIndex, selection.lastIndex) * mult;
-  RANGE_MIN.textContent = time_to_text(_min);
-  RANGE_MAX.textContent = time_to_text(_max);
-  RANGE_TOTAL.textContent = `(${time_to_text(_max-_min)})`;
-}
+  function chartPoint(event) {
+    const rect = canvas.getBoundingClientRect();
+    return [(event.clientX - rect.left) * chart.width / rect.width,
+      (event.clientY - rect.top) * chart.height / rect.height];
+  }
 
-function chart_getElementsAtEventForMode(e) {
-  return CHART.getElementsAtEventForMode(e, 'index', {intersect: false});
-}
-function get_index(e) {
-  const points = chart_getElementsAtEventForMode(e);
-  if (points[0]) return points[0].index;
-  if (e.clientX < CHART.chartArea.left) return 0;
-  if (e.clientX > CHART.chartArea.right) return Object.keys(CHART.data.datasets[0].data).length;
-  return selection.lastIndex;
-}
+  function timeAt(x) {
+    const { left, right } = chart.chartArea;
+    const index = (clamp(x, left, right) - left) / (right - left) * (times.length - 1);
+    const lo = Math.floor(index), hi = Math.ceil(index);
+    return Math.min(duration, Math.round(times[lo] + (times[hi] - times[lo]) * (index - lo)));
+  }
 
-MAIN_CANVAS.addEventListener('pointerdown', e => {
-  console.log(e);
-  const rect = MAIN_CANVAS.getBoundingClientRect();
-  selection.startX = e.clientX - rect.left;
-  selection.startIndex = get_index(e);
-  selection.drag = true;
-  selectionContext.clearRect(0, 0, MAIN_CANVAS.width, MAIN_CANVAS.height);
-});
+  canvas.addEventListener('pointerdown', event => {
+    if (loading || times.length < 2 || !event.isPrimary || event.button !== 0) return;
+    const [x, y] = chartPoint(event);
+    const { left, right, top, bottom } = chart.chartArea;
+    if (x < left || x > right || y < top || y > bottom) return;
+    canvas.setPointerCapture(event.pointerId);
+    drag = { id: event.pointerId, start, end };
+    start = end = timeAt(x);
+    updateRange();
+    chart.draw();
+  });
 
-function redraw(e) {
-  const _left = MAIN_CANVAS.getBoundingClientRect().left;
-  const x = Math.max(e.clientX - _left, CHART.chartArea.left);
-  selection.w = x - selection.startX;
-  selectionContext.clearRect(0, 0, MAIN_CANVAS.width, MAIN_CANVAS.height);
-  selectionContext.fillRect(
-    selection.startX,
-    0,
-    selection.w,
-    CHART.chartArea.bottom - CHART.chartArea.top
-  );
-}
-function draw_stop(e) {
-  if (!selection.drag) return;
-  selection.drag = false;
-  const index = get_index(e);
-  selection.lastIndex = index;
-  set_text_range();
-}
-MAIN_CANVAS.addEventListener("mouseleave", e => {
-  if (!selection.drag) return;
-  selection.drag = false;
-  set_text_range();
-});
-MAIN_CANVAS.addEventListener('pointermove', e => {
-  if (!selection.drag) return;
-  const index = get_index(e);
-  selection.lastIndex = index;
-  redraw(e);
-  set_text_range();
-});
-MAIN_CANVAS.addEventListener('pointerup', draw_stop);
+  function move(event) {
+    if (drag?.id !== event.pointerId) return;
+    end = timeAt(chartPoint(event)[0]);
+    updateRange();
+    chart.draw();
+  }
+  canvas.addEventListener('pointermove', move);
+  canvas.addEventListener('pointerup', event => {
+    if (drag?.id !== event.pointerId) return;
+    move(event);
+    drag = null;
+  });
+  canvas.addEventListener('lostpointercapture', event => {
+    if (drag?.id !== event.pointerId) return;
+    ({ start, end } = drag);
+    drag = null;
+    updateRange();
+    chart.draw();
+  });
+  apply.addEventListener('click', () => {
+    if (apply.disabled) return;
+    query.set('sc', Math.min(start, end));
+    query.set('fc', Math.max(start, end));
+    location.search = query.toString();
+  });
 
-SUMBIT.addEventListener("click", () => {
-  const _min = Math.min(selection.startIndex, selection.lastIndex);
-  const _max = Math.max(selection.startIndex, selection.lastIndex);
-  const mult = Math.max(SELECT_SLICE_SECONDS.value, 1);
-  QUERY_PARAMS.set("sc", _min * mult);
-  QUERY_PARAMS.set("fc", _max * mult);
-  window.location.replace(`?${QUERY_PARAMS.toString()}`);
-});
-
-const graphStatus = document.createElement('p');
-graphStatus.setAttribute('role', 'status');
-CHART_ELEMENT_WRAP.before(graphStatus);
-GET_DPS_REQUEST.onerror = () => { graphStatus.textContent = 'Ошибка соединения при загрузке графика.'; };
-set_text_range();
-toggle_graph();
-TOGGLE_GRAPH.addEventListener("change", toggle_graph);
-SELECT_SLICE_SECONDS.addEventListener("change", toggle_graph);
+  updateRange();
+  load();
+  toggle.addEventListener('change', load);
+  intervals.addEventListener('change', load);
+})();

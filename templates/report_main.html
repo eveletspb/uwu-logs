@@ -3,7 +3,7 @@
 {% block scripts_head %}
 <script src="/static/chart-4.1.2.min.js"></script>
 <script src="/static/report_main.js?v=240820-2" async></script>
-<script src="/static/dps_chart.js?261117-workspace" defer></script>
+<script src="/static/dps_chart.js?261120-period" defer></script>
 {% endblock scripts_head %}
 
 {% block add_css_file %}
@@ -11,7 +11,7 @@
 {% endblock add_css_file %}
 
 {% block the_main %}
-<main id="report-main" data-duration="{{ DURATION }}"{% if RUST_VIEW %} data-local{% endif %}>
+<main id="report-main" data-duration="{{ DURATION }}" data-chart-duration="{{ GRAPH_DURATION|default(DURATION) }}"{% if RUST_VIEW %} data-local{% endif %}>
   <div class="analysis-toolbar">
     <div class="metric-tabs" role="group" aria-label="Метрика">
       <button type="button" data-metric="all" aria-pressed="true">Сводка</button>

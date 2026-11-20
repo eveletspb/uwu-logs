@@ -18,9 +18,8 @@
       <span class="max-value"></span>
       <span class="total-value"></span>
     </div>
-    <button class="controls min-max-slider-submit" type="submit">Выделить период</button>
+    <button class="controls min-max-slider-submit" type="button" disabled>Выделить период</button>
     <section id="chart-wrap">
-      <canvas id="overlay" width="600" height="400" style="position:absolute;pointer-events:none;"></canvas>
-      <canvas id="chart"></canvas>
+      <canvas id="chart" style="touch-action:pan-y"></canvas>
     </section>
   </section>

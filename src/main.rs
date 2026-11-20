@@ -474,6 +474,41 @@ fn query_number<'de, D: serde::Deserializer<'de>>(
 }
 
 fn select(report: &mut Report, query: &ReportQuery) -> io::Result<Vec<Encounter>> {
+    select_with_duration(report, query).map(|(selected, _)| selected)
+}
+
+fn select_with_duration(
+    report: &mut Report,
+    query: &ReportQuery,
+) -> io::Result<(Vec<Encounter>, f64)> {
+    let windows = base_selection(report, query)?;
+    let duration = windows.iter().map(|window| window.duration_seconds).sum();
+    if query.sc.is_none() && query.fc.is_none() {
+        return Ok((windows, duration));
+    }
+    let start = query.sc.unwrap_or(0).saturating_mul(1000);
+    let end = query
+        .fc
+        .map_or(u64::MAX, |seconds| seconds.saturating_mul(1000));
+    let mut clipped = Vec::new();
+    let mut offset = 0u64;
+    for window in windows {
+        let after = offset.saturating_add(window.duration_millis());
+        if start < after
+            && offset < end
+            && let Some(window) = report.clip_encounter(
+                window,
+                start.saturating_sub(offset)..end.saturating_sub(offset),
+            )?
+        {
+            clipped.push(window);
+        }
+        offset = after;
+    }
+    Ok((clipped, duration))
+}
+
+fn base_selection(report: &mut Report, query: &ReportQuery) -> io::Result<Vec<Encounter>> {
     if query
         .boss
         .as_deref()
@@ -509,22 +544,6 @@ fn select(report: &mut Report, query: &ReportQuery) -> io::Result<Vec<Encounter>
     if attempt == "kill" {
         selected = selected.pop().into_iter().collect();
     }
-    if (query.sc.is_some() || query.fc.is_some()) && selected.len() == 1 {
-        let window = &selected[0];
-        let start = window.start_second.saturating_add(query.sc.unwrap_or(0));
-        let end = query.fc.map_or(window.end_second, |offset| {
-            window.start_second.saturating_add(offset)
-        });
-        let end = end.min(window.end_second);
-        if let Some(mut selection) = report.time_slice(start..end)? {
-            selection.boss.clone_from(&selected[0].boss);
-            selection.boss_slug.clone_from(&selected[0].boss_slug);
-            selection.difficulty.clone_from(&selected[0].difficulty);
-            selection.outcome.clone_from(&selected[0].outcome);
-            selection.attempt = selected[0].attempt;
-            selected = vec![selection];
-        }
-    }
     Ok(selected)
 }
 
@@ -536,13 +555,14 @@ async fn report_page(
 ) -> Result<Html<String>, Error> {
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
-        let selected = select(&mut report, &query)?;
+        let (selected, graph_duration) = select_with_duration(&mut report, &query)?;
         let summary = aggregate(&mut report, &selected)?;
         let specific = query.boss.as_deref().is_some_and(|boss| boss != "all");
         let table = report_view::overview(&mut report, &selected, specific, summary)?;
+        let common = report_view::context(&report, &id, &selected, &query, &uri);
         app.render(
             "report_main.html",
-            context! { ..report_view::context(&report, &id, &selected, &query, &uri), ..table },
+            context! { ..common, ..table, ..context! { GRAPH_DURATION => graph_duration } },
         )
     })
     .await
@@ -562,7 +582,7 @@ async fn spell_page(
     }
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
-        let selected = select(&mut report, &query)?;
+        let (selected, graph_duration) = select_with_duration(&mut report, &query)?;
         let common = report_view::context(&report, &id, &selected, &query, &uri);
         if view == "casts" {
             return app.render(
@@ -577,7 +597,10 @@ async fn spell_page(
             &view,
             query.target.as_deref(),
         )?;
-        app.render("dmg_done2.html", context! { ..common, ..detail })
+        app.render(
+            "dmg_done2.html",
+            context! { ..common, ..detail, ..context! { GRAPH_DURATION => graph_duration } },
+        )
     })
     .await
 }

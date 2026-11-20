@@ -26,6 +26,10 @@ pub struct Encounter {
 }
 
 impl Encounter {
+    pub fn duration_millis(&self) -> u64 {
+        (self.duration_seconds * 1000.0).round() as u64
+    }
+
     pub fn query(&self) -> String {
         format!(
             "?boss={}&mode={}&attempt={}&s={}&f={}",
@@ -346,6 +350,46 @@ impl Report {
                 Ok(())
             }
         }
+    }
+
+    pub fn clip_encounter(
+        &mut self,
+        encounter: Encounter,
+        millis: Range<u64>,
+    ) -> io::Result<Option<Encounter>> {
+        let duration = encounter.duration_millis();
+        if millis.start == 0 && millis.end >= duration {
+            return Ok(Some(encounter));
+        }
+        let end = millis.end.min(duration);
+        if millis.start >= end {
+            return Ok(None);
+        }
+        let year = year_from_id(&self.id);
+        let mut origin = None;
+        let mut first = None;
+        let mut last = None;
+        self.visit(Some(encounter.start..encounter.end), |row, line| {
+            let Some(stamp) = line
+                .split_once(',')
+                .and_then(|(stamp, _)| Stamp::parse(stamp))
+            else {
+                return;
+            };
+            let elapsed = stamp.relative_to(*origin.get_or_insert(stamp), year).max(0) as u64;
+            if elapsed >= millis.start && (elapsed < end || elapsed == end && end == duration) {
+                first.get_or_insert(row);
+                last = Some(row);
+            }
+        })?;
+        Ok(first.zip(last).map(|(start, last)| Encounter {
+            start,
+            end: last + 1,
+            start_second: encounter.start_second + millis.start / 1000,
+            end_second: encounter.start_second + end.div_ceil(1000),
+            duration_seconds: (end - millis.start) as f64 / 1000.0,
+            ..encounter
+        }))
     }
 
     pub fn time_slice(&mut self, seconds: Range<u64>) -> io::Result<Option<Encounter>> {

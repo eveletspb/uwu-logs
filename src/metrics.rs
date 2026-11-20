@@ -308,29 +308,26 @@ pub fn dps(
             let offset = event.stamp.relative_to(start, year).max(0) as u64;
             *points.entry((total_duration + offset) / 1000).or_default() += event.amount;
         })?;
-        total_duration += (encounter.duration_seconds * 10.0).round() as u64 * 100 + 100;
+        total_duration += encounter.duration_millis();
     }
-    let Some((&last, _)) = points.last_key_value() else {
+    if points.is_empty() {
         return Ok(BTreeMap::new());
-    };
+    }
+    let end = total_duration.div_ceil(1000);
     let format = |seconds: u64| format!("{:02}:{:02}", seconds / 60, seconds % 60);
     let mut output = BTreeMap::new();
     let mut current = 0;
-    if interval > 0 {
-        output.insert(format(0), 0.0);
-    }
-    for second in 0..=last {
-        current += points.get(&second).copied().unwrap_or(0);
+    output.insert(format(0), 0.0);
+    for second in 1..=end {
+        current += points.get(&(second - 1)).copied().unwrap_or(0);
+        if second == end {
+            current += points.get(&second).copied().unwrap_or(0);
+        }
         if interval == 0 {
-            output.insert(
-                format(second),
-                round(current as f64 / (second + 1) as f64, 10.0),
-            );
-        } else if (second + 1).is_multiple_of(interval) {
-            output.insert(
-                format(second + 1),
-                round(current as f64 / interval as f64, 10.0),
-            );
+            output.insert(format(second), round(current as f64 / second as f64, 10.0));
+        } else if second.is_multiple_of(interval) || second == end {
+            let width = (second - 1) % interval + 1;
+            output.insert(format(second), round(current as f64 / width as f64, 10.0));
             current = 0;
         }
     }

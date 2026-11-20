@@ -2,7 +2,7 @@
 
 {% block scripts_head %}
 <script src="/static/chart-4.1.2.min.js"></script>
-<script src="/static/dps_chart.js?261117-workspace" defer></script>
+<script src="/static/dps_chart.js?261120-period" defer></script>
 {% endblock scripts_head %}
 
 {% block add_style %}
@@ -145,7 +145,7 @@ option {
 {% endblock add_style %}
 
 {% block the_main %}
-<main id="dmg-done" data-source-name="{{ SOURCE_NAME }}" data-report-id="{{ REPORT_ID }}" data-duration="{{ DURATION }}">
+<main id="dmg-done" data-source-name="{{ SOURCE_NAME }}" data-report-id="{{ REPORT_ID }}" data-duration="{{ DURATION }}" data-chart-duration="{{ GRAPH_DURATION|default(DURATION) }}">
 <section id="target-select-wrap">
   <button type="button" id="target-select-reset">All</button>
   <select id="target-select">
@@ -199,32 +199,7 @@ option {
     {% endif %}
   </ul>
 </section>
-<section id="chart-wrap-wrap">
-  <input type="checkbox" id="toggle-graph" checked>
-  <label for="toggle-graph">График DPS</label>
-  <select id="sliced-sec" class="controls">
-    <option value=0>Среднее за бой</option>
-    <option value=1>По 1 секунде</option>
-    <option value=2>По 2 сек.</option>
-    <option value=3>По 3 сек.</option>
-    <option value=5 selected>По 5 секунд</option>
-    <option value=10>По 10 сек.</option>
-    <option value=15>По 15 сек.</option>
-    <option value=20>По 20 сек.</option>
-    <option value=30>По 30 сек.</option>
-  </select>
-  <div class="controls range-values">
-    <span class="min-value"></span>
-    <span> - </span>
-    <span class="max-value"></span>
-    <span class="total-value"></span>
-  </div>
-  <button class="controls min-max-slider-submit" type="submit">Выделить период</button>
-  <section id="chart-wrap">
-    <canvas id="overlay" width="600" height="400" style="position:absolute;pointer-events:none;"></canvas>
-    <canvas id="chart"></canvas>
-  </section>
-</section>
+{% include "dps_chart.html" %}
 <section id="dmg-done-main" class="table-wrap table-spells">
   {% if (spell_rows if RUST_VIEW else SPELLS_DATA) %}
     <table>
