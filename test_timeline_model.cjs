@@ -23,4 +23,14 @@ assert.equal(result.rows.length,1);assert.equal(result.rows[0].group,'debuffs');
 // Critical damage and aura stacks remain available for detailed event tooltips.
 result=build(data([event(1000,'SPELL_DAMAGE','Player','Boss','1,100,20,1,0,0,0,1,0,0'),event(2000,'SPELL_AURA_APPLIED_DOSE','Player','Player','1,BUFF,3')]));
 assert.equal(result.events[0].critical,true);assert.equal(result.events[1].stacks,3);
-console.log('Timeline model: seven event and interval scenarios passed.');
+// The log can record only cast starts or duplicate a cast under two spell IDs.
+const alias = event(5000,'SPELL_CAST_SUCCESS','Player','nil');
+const recorded = data([event(1000,'SPELL_CAST_START','Player','nil'),alias]);
+recorded.DATA[2] = [alias];
+recorded.SPELLS[2] = recorded.SPELLS[1];
+result=build(recorded);
+assert.equal(result.rows.length,1);assert.equal(result.rows[0].events.length,2);
+assert.equal(result.rows[0].successes,1);assert.equal(result.events[0].target,'');
+result=build(data([event(1000,'SPELL_CAST_START','Player','nil')]));
+assert.equal(result.rows[0].total,1);assert.equal(result.rows[0].successes,0);
+console.log('Timeline model: event, interval and cast alias scenarios passed.');
