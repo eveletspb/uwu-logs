@@ -34,6 +34,27 @@ static APPEARANCE: LazyLock<Appearance> = LazyLock::new(|| {
         .expect("bundled report appearance")
 });
 
+static SPEC_CLASSES: LazyLock<HashMap<&str, Option<&str>>> = LazyLock::new(|| {
+    let mut classes = HashMap::new();
+    for (class, spells) in &APPEARANCE.spec_book {
+        for spell in spells.keys() {
+            classes
+                .entry(spell.as_str())
+                .and_modify(|owner| *owner = None)
+                .or_insert(Some(class.as_str()));
+        }
+    }
+    classes
+});
+
+pub(crate) fn class_for_specialization_spell(spell: &str) -> Option<&'static str> {
+    SPEC_CLASSES.get(spell).copied().flatten()
+}
+
+pub(crate) fn specialization(class: &str, spell: &str) -> Option<u8> {
+    APPEARANCE.spec_book.get(class)?.get(spell).copied()
+}
+
 static ICONS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     let by_icon: BTreeMap<&str, BTreeMap<&str, serde::de::IgnoredAny>> =
         serde_json::from_str(include_str!("../static/spells_icons.json"))
@@ -114,22 +135,24 @@ pub fn player_specs(
             };
             if event.kind != "SPELL_AURA_REMOVED"
                 && !detected.contains_key(event.source)
-                && let Some(book) = classes
+                && let Some(spec) = classes
                     .get(event.source)
-                    .and_then(|class| APPEARANCE.spec_book.get(class))
-                && let Some(spec) = book.get(event.spell)
+                    .and_then(|class| specialization(class, event.spell))
             {
-                detected.insert(event.source.to_owned(), usize::from(*spec));
+                detected.insert(event.source.to_owned(), spec);
             }
         },
     )?;
     Ok(classes
         .into_iter()
         .filter_map(|(guid, class)| {
-            let index = detected
-                .get(&guid)
-                .copied()
-                .unwrap_or(usize::from(class == "warlock") * 3);
+            let index = usize::from(
+                detected
+                    .get(&guid)
+                    .or_else(|| report.metadata.specs.get(&guid))
+                    .copied()
+                    .unwrap_or(if class == "warlock" { 3 } else { 0 }),
+            );
             let spec = APPEARANCE.specs.get(&class)?.get(index)?;
             Some((guid, (spec.0.as_str(), spec.1.as_str())))
         })

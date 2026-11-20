@@ -986,6 +986,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{id}");
             }
         }
+        Some("reindex-appearance") => {
+            let mut ids = env::args().skip(2).peekable();
+            if ids.peek().is_none() {
+                return Err("usage: raidledger reindex-appearance <report-id>...".into());
+            }
+            for id in ids {
+                let changed = raidledger::reports::reindex_appearance(&root, &id)?;
+                println!("{id}: {}", if changed { "updated" } else { "unchanged" });
+            }
+        }
         Some("merge") => {
             let ids = env::args().skip(2).collect::<Vec<_>>();
             println!("{}", raidledger::reports::merge_reports(&root, &ids)?);

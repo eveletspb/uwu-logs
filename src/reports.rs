@@ -46,6 +46,8 @@ pub struct Metadata {
     pub players: BTreeMap<String, String>,
     pub units: BTreeMap<String, Unit>,
     pub classes: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub specs: BTreeMap<String, u8>,
     #[serde(default)]
     pub time_index: Vec<(u64, u64)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -55,6 +57,30 @@ pub struct Metadata {
 }
 
 impl Metadata {
+    fn observe_appearance(&mut self, event: &Event<'_>) {
+        use crate::appearance::{class_for_specialization_spell, specialization};
+        if !player_guid(event.source) || RULES.flag_ignore_player_class.contains(event.kind) {
+            return;
+        }
+        if !self.classes.contains_key(event.source)
+            && let Some(class) = RULES
+                .class_book
+                .get(event.spell)
+                .map(String::as_str)
+                .or_else(|| class_for_specialization_spell(event.spell))
+        {
+            self.classes.insert(event.source.into(), class.into());
+        }
+        if !self.specs.contains_key(event.source)
+            && let Some(spec) = self
+                .classes
+                .get(event.source)
+                .and_then(|class| specialization(class, event.spell))
+        {
+            self.specs.insert(event.source.into(), spec);
+        }
+    }
+
     fn observe_units(&mut self, event: &Event<'_>) {
         for (guid, name) in [
             (event.source, event.source_name),
@@ -73,13 +99,7 @@ impl Metadata {
                 );
             }
         }
-        if player_guid(event.source)
-            && !self.classes.contains_key(event.source)
-            && !RULES.flag_ignore_player_class.contains(event.kind)
-            && let Some(class) = RULES.class_book.get(event.spell)
-        {
-            self.classes.insert(event.source.into(), class.clone());
-        }
+        self.observe_appearance(event);
         let summons = event.kind == "SPELL_SUMMON" && event.source != event.target;
         let links_owner_to_pet = RULES.pet_filter_spells.contains(event.spell)
             && player_guid(event.source)
@@ -675,6 +695,58 @@ fn read_cache<T: DeserializeOwned + Default>(path: &Path) -> io::Result<T> {
 }
 
 static PUBLISH: Mutex<()> = Mutex::new(());
+
+pub fn reindex_appearance(root: &Path, id: &str) -> io::Result<bool> {
+    let _guard = PUBLISH
+        .lock()
+        .map_err(|_| io::Error::other("report publication lock failed"))?;
+    let mut report = Report::open(root, id)?;
+    if !matches!(report.source, Source::Indexed(_)) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "expected a native report",
+        ));
+    }
+    let mut appearance = Metadata {
+        classes: report.metadata.classes.clone(),
+        specs: report.metadata.specs.clone(),
+        ..Metadata::default()
+    };
+    report.visit(None, |_, line| {
+        if let Some(event) = Event::parse(line) {
+            appearance.observe_appearance(&event);
+        }
+    })?;
+    if appearance.classes == report.metadata.classes && appearance.specs == report.metadata.specs {
+        return Ok(false);
+    }
+    let Source::Indexed(file) = report.source else {
+        unreachable!()
+    };
+    let mut metadata = file.metadata().clone();
+    metadata["classes"] = serde_json::to_value(appearance.classes)?;
+    metadata["specs"] = serde_json::to_value(appearance.specs)?;
+
+    let directory = root.join("LogsDir");
+    let original = directory.join(format!("{id}.uwu"));
+    let (stage, output) = Staged::create(&directory)?;
+    let mut output = BufWriter::new(output);
+    file.copy_with_metadata(&mut output, metadata)?;
+    output.flush()?;
+    output.get_ref().sync_all()?;
+    drop(output);
+    let backup_dir = directory.join(".raid-appearance-backups");
+    fs::create_dir_all(&backup_dir)?;
+    fs::hard_link(
+        &original,
+        backup_dir.join(format!(
+            "{id}-{}.uwu",
+            stage.0.file_name().unwrap().to_string_lossy()
+        )),
+    )?;
+    fs::rename(&stage.0, original)?;
+    Ok(true)
+}
 
 pub fn import_log(root: &Path, input: impl BufRead, year: u32, realm: &str) -> io::Result<String> {
     import_logs(root, [Ok(input)], year, realm)

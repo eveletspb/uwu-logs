@@ -24,6 +24,17 @@ struct Index {
     metadata: serde_json::Value,
 }
 
+impl Index {
+    fn write_footer(&self, mut output: impl Write) -> io::Result<()> {
+        let footer = serde_json::to_vec(self).map_err(io::Error::other)?;
+        if footer.len() as u64 > MAX_INDEX_BYTES {
+            return Err(invalid("combat log index exceeds the size limit"));
+        }
+        output.write_all(&footer)?;
+        output.write_all(&(footer.len() as u64).to_le_bytes())
+    }
+}
+
 pub(crate) fn read_event(input: &mut impl BufRead, event: &mut Vec<u8>) -> io::Result<usize> {
     event.clear();
     let read = input
@@ -101,13 +112,7 @@ impl<W: Write> ReportWriter<W> {
             return Err(invalid("empty combat log"));
         }
         self.index.metadata = metadata;
-        let footer = serde_json::to_vec(&self.index).map_err(io::Error::other)?;
-        if footer.len() as u64 > MAX_INDEX_BYTES {
-            return Err(invalid("combat log index exceeds the size limit"));
-        }
-        self.output.write_all(&footer)?;
-        self.output
-            .write_all(&(footer.len() as u64).to_le_bytes())?;
+        self.index.write_footer(&mut self.output)?;
         Ok(self.index.events)
     }
 }
@@ -229,6 +234,21 @@ impl<R: Read + Seek> ReportFile<R> {
 
     pub fn metadata(&self) -> &serde_json::Value {
         &self.index.metadata
+    }
+
+    pub(crate) fn copy_with_metadata(
+        mut self,
+        mut output: impl Write,
+        metadata: serde_json::Value,
+    ) -> io::Result<()> {
+        let block = self.index.blocks.last().expect("validated nonempty report");
+        let end = block.offset + u64::from(block.stored_bytes);
+        self.input.seek(SeekFrom::Start(0))?;
+        if io::copy(&mut self.input.take(end), &mut output)? != end {
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
+        self.index.metadata = metadata;
+        self.index.write_footer(output)
     }
 
     pub fn read_events(&mut self, range: Range<u64>, mut output: impl Write) -> io::Result<()> {
