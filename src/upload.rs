@@ -6,10 +6,10 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use minijinja::context;
 use raidledger::lockouts::Manifest;
-use raidledger::reports::{import_capture, valid_capture};
+use raidledger::reports::{import_captures, valid_capture};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
@@ -225,16 +225,112 @@ fn import_file(
     request: &UploadMetadata,
     year: u32,
 ) -> io::Result<Vec<String>> {
+    let realm = &request.server;
+    let digest = sha256(source)?;
+    let archive = root
+        .join("uploads")
+        .join("raidledger-originals")
+        .join(&digest);
+    let provenance = archive.join(format!("{year}-{}.json", crate::path_segment(realm)));
+    let existing = File::open(&provenance)
+        .ok()
+        .and_then(|file| serde_json::from_reader::<_, Receipt>(BufReader::new(file)).ok());
+    if archive.join("original").is_file()
+        && let Some(existing) = existing
+        && existing.capture == request.capture
+        && existing.timezone == request.timezone
+        && !existing.reports.is_empty()
+        && existing.reports.iter().all(|id| {
+            raidledger::reports::valid_id(id)
+                && root.join("LogsDir").join(format!("{id}.uwu")).is_file()
+        })
+    {
+        return Ok(existing.reports);
+    }
+    let mut captures = BTreeSet::from([format!("upload-{year}-{digest}")]);
+    captures.extend(request.capture.iter().cloned());
+    let ids = import_payload(root, source, request, year, captures)?;
+    fs::create_dir_all(&archive)?;
+    match fs::hard_link(source, archive.join("original")) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error),
+    }
+    let stage = archive.join(source.file_name().unwrap());
+    let mut record = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&stage)?;
+    let result = (|| {
+        serde_json::to_writer(
+            &mut record,
+            &json!({
+                "sha256": digest, "filename": request.filename, "server": realm, "year": year,
+                "timezone": request.timezone, "capture": request.capture, "reports": ids,
+            }),
+        )?;
+        record.sync_all()?;
+        drop(record);
+        fs::rename(&stage, provenance)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(stage);
+    }
+    result?;
+    Ok(ids)
+}
+
+#[derive(Deserialize)]
+struct Receipt {
+    capture: Option<String>,
+    timezone: String,
+    reports: Vec<String>,
+}
+
+fn sha256(source: &Path) -> io::Result<String> {
+    let mut command = if cfg!(target_os = "macos") {
+        let mut command = Command::new("shasum");
+        command.args(["-a", "256"]);
+        command
+    } else if cfg!(windows) {
+        let mut command = Command::new("certutil.exe");
+        command.arg("-hashfile");
+        command
+    } else {
+        Command::new("sha256sum")
+    };
+    command.arg(source);
+    if cfg!(windows) {
+        command.arg("SHA256");
+    }
+    let output = command.stdin(Stdio::null()).output()?;
+    if output.status.success()
+        && let Some(value) = String::from_utf8_lossy(&output.stdout)
+            .split_whitespace()
+            .find(|word| word.len() == 64 && word.bytes().all(|b| b.is_ascii_hexdigit()))
+    {
+        return Ok(value.to_ascii_lowercase());
+    }
+    Err(io::Error::other("could not calculate the upload checksum"))
+}
+
+fn import_payload(
+    root: &Path,
+    source: &Path,
+    request: &UploadMetadata,
+    year: u32,
+    captures: BTreeSet<String>,
+) -> io::Result<Vec<String>> {
     let filename = request.filename.to_ascii_lowercase();
     let realm = &request.server;
     if filename.ends_with(".txt") {
-        return import_capture(
+        return import_captures(
             root,
             [Ok(BufReader::new(File::open(source)?))],
             year,
             realm,
             None,
-            request.capture.as_deref(),
+            captures,
         );
     }
     let sevenzip = sevenzip();
@@ -291,7 +387,7 @@ fn import_file(
     let readers = entries
         .into_iter()
         .map(|entry| archive_entry(&sevenzip, source, entry).map(BufReader::new));
-    import_capture(
+    import_captures(
         root,
         readers,
         year,
@@ -299,7 +395,7 @@ fn import_file(
         manifest
             .as_ref()
             .map(|manifest| (manifest, request.timezone.as_str())),
-        request.capture.as_deref(),
+        captures,
     )
 }
 

@@ -1021,6 +1021,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{id}: {}", if changed { "updated" } else { "unchanged" });
             }
         }
+        Some("reindex-difficulty") => {
+            let mut ids = env::args().skip(2).collect::<Vec<_>>();
+            if ids.is_empty() {
+                ids = list_ids(&root)?;
+            }
+            for id in ids {
+                if raidledger::reports::reindex_difficulty(&root, &id)? {
+                    println!("{id}: updated");
+                }
+            }
+        }
         Some("merge") => {
             let ids = env::args().skip(2).collect::<Vec<_>>();
             println!("{}", raidledger::reports::merge_reports(&root, &ids)?);

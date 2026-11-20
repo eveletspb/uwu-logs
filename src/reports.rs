@@ -1,5 +1,6 @@
 use crate::absorbs::RULES;
 use crate::combat::{CATALOG, Event, Stamp, guid_boss, normalize, player_guid, slug};
+use crate::encounters::{Difficulty, yogg_keeper};
 use crate::lockouts::{Lockout, Manifest, Merge};
 use crate::storage::{ReportFile, ReportWriter, read_event};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -552,6 +553,7 @@ impl Report {
         let mut last = None;
         let mut rows = 0;
         let mut rebuilt = Metadata::default();
+        let mut keeper = None;
         let mut pulls = windows.is_empty().then(crate::encounters::Pulls::default);
         let recover_units = self.metadata.units.is_empty() || self.metadata.players.is_empty();
         self.visit(None, |index, line| {
@@ -566,7 +568,10 @@ impl Report {
                 last = Some(event.stamp);
                 let time = event.stamp.relative_to(origin, year).max(0) as u64;
                 for entry in &active {
-                    windows[*entry].observe(index, time, &event);
+                    windows[*entry].observe(index, time, &event, keeper);
+                }
+                if yogg_keeper(&event) {
+                    keeper = Some(index);
                 }
                 if let Some(pulls) = &mut pulls {
                     pulls.observe(index, time, &event);
@@ -634,7 +639,7 @@ struct Window {
     first: Option<u64>,
     last: u64,
     killed: bool,
-    roster: BTreeSet<String>,
+    difficulty: Difficulty,
 }
 
 impl Window {
@@ -647,20 +652,17 @@ impl Window {
             first: None,
             last: 0,
             killed: false,
-            roster: BTreeSet::new(),
+            difficulty: Difficulty::default(),
         }
     }
 
-    fn observe(&mut self, index: u64, time: u64, event: &Event) {
+    fn observe(&mut self, index: u64, time: u64, event: &Event, keeper: Option<u64>) {
+        if self.first.is_none() {
+            self.difficulty.keeper_before(keeper);
+        }
         self.first.get_or_insert(time);
         self.last = time;
-        if index - self.start < 2000
-            && self.roster.len() <= 10
-            && player_guid(event.source)
-            && !matches!(event.kind, "SPELL_AURA_REMOVED" | "SPELL_AURA_REFRESH")
-        {
-            self.roster.insert(event.source.into());
-        }
+        self.difficulty.observe(index, self.start, event);
         self.killed |= event.killing_blow() && guid_boss(event.target) == Some(&self.boss);
     }
 
@@ -677,13 +679,14 @@ impl Window {
         } else {
             "wipe"
         };
+        let difficulty = self.difficulty.mode(&self.boss, self.start, self.end);
         Some(Encounter {
             boss_slug: slug(&self.boss),
             boss: self.boss,
             attempt: self.attempt,
             start: self.start,
             end: self.end,
-            difficulty: if self.roster.len() > 10 { "25N" } else { "10N" }.into(),
+            difficulty: difficulty.into(),
             outcome: outcome.into(),
             duration_seconds: duration,
             start_second: first / 1000,
@@ -770,7 +773,62 @@ pub fn reindex_appearance(root: &Path, id: &str) -> io::Result<bool> {
     let mut metadata = file.metadata().clone();
     metadata["classes"] = serde_json::to_value(appearance.classes)?;
     metadata["specs"] = serde_json::to_value(appearance.specs)?;
+    replace_metadata(root, id, file, metadata, ".raid-appearance-backups")?;
+    Ok(true)
+}
 
+pub fn reindex_difficulty(root: &Path, id: &str) -> io::Result<bool> {
+    let _guard = PUBLISH
+        .lock()
+        .map_err(|_| io::Error::other("report publication lock failed"))?;
+    if !valid_id(id) || !root.join("LogsDir").join(format!("{id}.uwu")).is_file() {
+        return Ok(false);
+    }
+    let mut report = Report::open(root, id)?;
+    let mut encounters = std::mem::take(&mut report.metadata.encounters);
+    let mut changed = false;
+    for encounter in &mut encounters {
+        let mut difficulty = Difficulty::default();
+        let start = encounter.start;
+        let scan_start = if encounter.boss == "Yogg-Saron" {
+            start.saturating_sub(1000)
+        } else {
+            start
+        };
+        report.visit(Some(scan_start..encounter.end), |row, line| {
+            if let Some(event) = Event::parse(line) {
+                if row >= start {
+                    difficulty.observe(row, start, &event);
+                } else if yogg_keeper(&event) {
+                    difficulty.keeper_before(Some(row));
+                }
+            }
+        })?;
+        let mode = difficulty.mode(&encounter.boss, start, encounter.end);
+        if mode != encounter.difficulty {
+            changed = true;
+            encounter.difficulty = mode.into();
+        }
+    }
+    if !changed {
+        return Ok(false);
+    }
+    let Source::Indexed(file) = report.source else {
+        unreachable!()
+    };
+    let mut metadata = file.metadata().clone();
+    metadata["encounters"] = serde_json::to_value(encounters)?;
+    replace_metadata(root, id, file, metadata, ".raid-difficulty-backups")?;
+    Ok(true)
+}
+
+fn replace_metadata(
+    root: &Path,
+    id: &str,
+    file: ReportFile<File>,
+    metadata: serde_json::Value,
+    backup_name: &str,
+) -> io::Result<()> {
     let directory = root.join("LogsDir");
     let original = directory.join(format!("{id}.uwu"));
     let (stage, output) = Staged::create(&directory)?;
@@ -779,7 +837,7 @@ pub fn reindex_appearance(root: &Path, id: &str) -> io::Result<bool> {
     output.flush()?;
     output.get_ref().sync_all()?;
     drop(output);
-    let backup_dir = directory.join(".raid-appearance-backups");
+    let backup_dir = directory.join(backup_name);
     fs::create_dir_all(&backup_dir)?;
     fs::hard_link(
         &original,
@@ -789,7 +847,7 @@ pub fn reindex_appearance(root: &Path, id: &str) -> io::Result<bool> {
         )),
     )?;
     fs::rename(&stage.0, original)?;
-    Ok(true)
+    Ok(())
 }
 
 pub fn import_log(root: &Path, input: impl BufRead, year: u32, realm: &str) -> io::Result<String> {
@@ -824,9 +882,25 @@ pub fn import_capture(
     manifest: Option<(&Manifest, &str)>,
     capture: Option<&str>,
 ) -> io::Result<Vec<String>> {
-    if let Some(capture) = capture
-        && !valid_capture(capture)
-    {
+    import_captures(
+        root,
+        inputs,
+        year,
+        realm,
+        manifest,
+        capture.into_iter().map(str::to_owned).collect(),
+    )
+}
+
+pub fn import_captures(
+    root: &Path,
+    inputs: impl IntoIterator<Item = io::Result<impl BufRead>>,
+    year: u32,
+    realm: &str,
+    manifest: Option<(&Manifest, &str)>,
+    captures: BTreeSet<String>,
+) -> io::Result<Vec<String>> {
+    if captures.iter().any(|capture| !valid_capture(capture)) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "invalid capture ID",
@@ -841,10 +915,6 @@ pub fn import_capture(
     let directory = root.join("LogsDir");
     fs::create_dir_all(&directory)?;
     let (staged, file) = Staged::create(&directory)?;
-    let captures = capture
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>();
     let (first, author, lockout) =
         build_native(file, inputs, year, realm, manifest, (None, &captures), None)?;
     let initial = PendingReport {
@@ -897,7 +967,7 @@ fn publish(
         year,
     } = part;
     if !captures.is_empty()
-        && let Some((id, _)) = find_native(directory, |metadata| {
+        && let Some((id, _)) = find_native(directory, realm, |metadata| {
             metadata
                 .get("captures")
                 .and_then(serde_json::Value::as_array)
@@ -912,7 +982,7 @@ fn publish(
         return Ok(id);
     }
     if let Some(lockout) = lockout
-        && let Some((id, previous)) = find_native(directory, |metadata| {
+        && let Some((id, previous)) = find_native(directory, realm, |metadata| {
             metadata
                 .get("lockout")
                 .and_then(|value| serde_json::from_value::<Lockout>(value.clone()).ok())
@@ -920,6 +990,15 @@ fn publish(
         })?
     {
         let previous_year = year_from_id(&id);
+        let mut lockout = lockout.clone();
+        if let Some(older) = previous
+            .metadata()
+            .get("lockout")
+            .and_then(|value| serde_json::from_value::<Lockout>(value.clone()).ok())
+        {
+            lockout.guild = lockout.guild.or(older.guild);
+            lockout.faction = lockout.faction.or(older.faction);
+        }
         let mut merged_captures = captures.clone();
         merged_captures.extend(
             previous
@@ -941,7 +1020,7 @@ fn publish(
             previous_year.min(*year),
             realm,
             None,
-            (Some(lockout.clone()), &merged_captures),
+            (Some(lockout), &merged_captures),
             None,
         )?;
         let original = directory.join(format!("{id}.uwu"));
@@ -1378,8 +1457,10 @@ fn report_reader(source: Source) -> io::Result<BufReader<Box<dyn io::Read>>> {
 
 fn find_native(
     directory: &Path,
+    realm: &str,
     has: impl Fn(&serde_json::Value) -> bool,
 ) -> io::Result<Option<(String, ReportFile<File>)>> {
+    let realm = id_component(realm);
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
@@ -1389,6 +1470,9 @@ fn find_native(
         let Some(id) = name.strip_suffix(".uwu").filter(|id| valid_id(id)) else {
             continue;
         };
+        if id.splitn(4, "--").nth(3) != Some(realm.as_str()) {
+            continue;
+        }
         let report = ReportFile::open(File::open(entry.path())?)?;
         if has(report.metadata()) {
             return Ok(Some((id.to_owned(), report)));
@@ -1650,5 +1734,26 @@ impl LegacyGroups {
                 .parts
                 .values()
                 .any(|parts| parts.iter().skip(1).any(|part| part == id))
+    }
+
+    pub fn related_ids<'a>(&'a self, id: &'a str) -> Vec<&'a str> {
+        let canonical = self.aliases.get(id).map_or(id, String::as_str);
+        let group = self
+            .parts
+            .iter()
+            .find(|(_, parts)| parts.iter().any(|part| part == canonical));
+        let mut ids = vec![id, canonical];
+        if let Some((anchor, parts)) = group {
+            ids.push(anchor);
+            ids.extend(parts.iter().map(String::as_str));
+        }
+        ids.extend(
+            self.aliases
+                .iter()
+                .filter(|(_, anchor)| ids.contains(&anchor.as_str()))
+                .map(|(alias, _)| alias.as_str())
+                .collect::<Vec<_>>(),
+        );
+        ids
     }
 }

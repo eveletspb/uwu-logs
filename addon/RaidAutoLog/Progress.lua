@@ -7,6 +7,17 @@ local lastIdentity, lastIdentityTime
 local function Hex(value)
     return (tostring(value or ""):gsub(".", function(c) return string.format("%02x", string.byte(c)) end))
 end
+local function RaidGuild()
+    local size = GetNumRaidMembers and GetNumRaidMembers() or 0
+    local counts = {}
+    for i = 1, size do
+        local guild = GetGuildInfo("raid" .. i)
+        if guild and guild ~= "" then
+            counts[guild] = (counts[guild] or 0) + 1
+            if counts[guild] > size / 2 then return guild end
+        end
+    end
+end
 local function SaveIdentity()
     if not session or not GetNumSavedInstances or not GetSavedInstanceInfo then return end
     local name, kind, currentDifficulty = GetInstanceInfo()
@@ -27,7 +38,7 @@ local function SaveIdentity()
             end
             keep[#keep+1] = table.concat({"RAL2",time(),Hex((GetCVar and GetCVar("realmList")) or GetRealmName()),
                 Hex(UnitName("player")),Hex(name),Hex(string.format("%.0f",id)),Hex(tostring(high or 0)),
-                difficulty,math.floor(time()+reset),session},"|")
+                difficulty,math.floor(time()+reset),session,Hex(RaidGuild()),Hex(UnitFactionGroup("player"))},"|")
             while #keep > 1000 do table.remove(keep,1) end
             RaidAutoLogDB.lockouts = keep
         end

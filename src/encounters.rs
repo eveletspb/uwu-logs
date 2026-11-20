@@ -1,6 +1,91 @@
 use crate::combat::{CATALOG, Event, player_guid, slug};
 use crate::reports::Encounter;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::LazyLock;
+
+const MODES: [&str; 4] = ["10N", "10H", "25N", "25H"];
+const FREYA: [&str; 6] = ["62437", "62438", "62623", "62859", "62861", "62872"];
+const YOGG: [&str; 4] = ["62650", "62670", "62671", "62702"];
+static MODE_RULES: LazyLock<BTreeMap<String, Vec<[String; 4]>>> =
+    LazyLock::new(|| serde_json::from_str(include_str!("../config/encounter-modes.json")).unwrap());
+static MODE_SPELLS: LazyLock<BTreeSet<&'static str>> = LazyLock::new(|| {
+    MODE_RULES
+        .values()
+        .flatten()
+        .flatten()
+        .map(String::as_str)
+        .filter(|spell| !spell.is_empty())
+        .chain(FREYA)
+        .chain(YOGG)
+        .collect()
+});
+
+#[derive(Default)]
+pub(crate) struct Difficulty {
+    spells: BTreeMap<&'static str, u64>,
+    players: BTreeMap<String, u64>,
+    previous_yogg_keeper: Option<u64>,
+}
+
+impl Difficulty {
+    pub fn observe(&mut self, row: u64, start: u64, event: &Event<'_>) {
+        if row - start < 2000
+            && self.players.len() <= 10
+            && player_guid(event.source)
+            && !matches!(event.kind, "SPELL_AURA_REMOVED" | "SPELL_AURA_REFRESH")
+        {
+            self.players.entry(event.source.into()).or_insert(row);
+        }
+        if let Some(&spell) = MODE_SPELLS.get(event.spell) {
+            self.spells.entry(spell).or_insert(row);
+        }
+    }
+
+    pub fn keeper_before(&mut self, keeper: Option<u64>) {
+        self.previous_yogg_keeper = keeper;
+    }
+
+    pub fn mode(&self, boss: &str, start: u64, end: u64) -> &'static str {
+        let size = if self.players.values().filter(|row| **row < end).count() > 10 {
+            2
+        } else {
+            0
+        };
+        let seen = |spell: &str| self.spells.get(spell).copied().filter(|row| *row < end);
+        if boss == "Freya" {
+            return MODES[size
+                + usize::from(FREYA.iter().filter(|spell| seen(spell).is_some()).count() >= 3)];
+        }
+        if boss == "Yogg-Saron" {
+            let assisted = self
+                .previous_yogg_keeper
+                .is_some_and(|row| row >= start.saturating_sub(1000))
+                || YOGG.iter().any(|spell| seen(spell).is_some());
+            return MODES[size + usize::from(!assisted)];
+        }
+        let rules = MODE_RULES.get(boss).or_else(|| {
+            if !matches!(boss, "Mimiron" | "General Vezax") {
+                return None;
+            }
+            MODE_RULES.get(&format!("{boss}{}", MODES[size]))
+        });
+        for variant in rules.into_iter().flatten() {
+            if let Some((_, mode)) = variant
+                .iter()
+                .enumerate()
+                .filter_map(|(mode, spell)| Some((seen(spell)?, mode)))
+                .min()
+            {
+                return MODES[mode];
+            }
+        }
+        MODES[size]
+    }
+}
+
+pub(crate) fn yogg_keeper(event: &Event<'_>) -> bool {
+    YOGG.contains(&event.spell)
+}
 
 #[derive(Clone, Copy)]
 struct Marker {
@@ -27,7 +112,7 @@ struct Pull {
     last: Option<Marker>,
     first_fury: Option<Marker>,
     last_fury: Option<Marker>,
-    casters: BTreeSet<String>,
+    difficulty: Difficulty,
     killed: bool,
 }
 
@@ -80,12 +165,7 @@ impl Pull {
                 start: first.row,
                 end: last.row + 1,
                 attempt: *attempt,
-                difficulty: if self.casters.len() > 10 {
-                    "25N"
-                } else {
-                    "10N"
-                }
-                .into(),
+                difficulty: self.difficulty.mode(boss, first.row, last.row + 1).into(),
                 outcome: if defeated && duration >= minimum as f64 {
                     "kill"
                 } else {
@@ -166,18 +246,21 @@ pub struct Pulls {
     current: BTreeMap<String, Pull>,
     attempts: BTreeMap<String, usize>,
     output: Vec<Encounter>,
+    yogg_keeper: Option<u64>,
 }
 
 impl Pulls {
     pub fn observe(&mut self, row: u64, time: u64, event: &Event<'_>) {
         for pull in self.current.values_mut() {
-            if pull.casters.len() <= 10
-                && pull.first.is_some_and(|first| row - first.row < 2000)
-                && player_guid(event.source)
-                && !matches!(event.kind, "SPELL_AURA_REMOVED" | "SPELL_AURA_REFRESH")
+            if let Some((first, last)) = pull.first.zip(pull.last)
+                && time.saturating_sub(last.time) <= 60_000
             {
-                pull.casters.insert(event.source.into());
+                pull.difficulty.observe(row, first.row, event);
             }
+        }
+        let preceding_keeper = self.yogg_keeper;
+        if yogg_keeper(event) {
+            self.yogg_keeper = Some(row);
         }
         let target = event.target.get(6..12).unwrap_or_default();
         if event.kind == "PARTY_KILL" {
@@ -215,6 +298,9 @@ impl Pulls {
             old.finish(guid, &mut self.attempts, &mut self.output);
         }
         let pull = self.current.entry(guid.into()).or_default();
+        if pull.first.is_none() {
+            pull.difficulty.keeper_before(preceding_keeper);
+        }
         let marker = Marker {
             row,
             time,
@@ -229,6 +315,9 @@ impl Pulls {
             amount: event.amount,
             fury: event.spell == "72350",
         };
+        if pull.first.is_none() {
+            pull.difficulty.observe(row, row, event);
+        }
         pull.append(marker, CATALOG.max_tail.get(guid).copied().unwrap_or(1000));
     }
 
@@ -244,6 +333,23 @@ impl Pulls {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mode_uses_boss_spells_and_keepers() {
+        let mut difficulty = Difficulty::default();
+        let event = |spell: &str| {
+            format!(
+                "10/10 18:30:01.000,SPELL_DAMAGE,0xF130008F9A000001,Festergut,0x0000000000000001,Player,{spell},Ability,0x20,100,0"
+            )
+        };
+        let heroic = event("72553");
+        difficulty.observe(4, 0, &Event::parse(&heroic).unwrap());
+        assert_eq!(difficulty.mode("Festergut", 0, 5), "25H");
+        assert_eq!(difficulty.mode("Festergut", 0, 4), "10N");
+        assert_eq!(difficulty.mode("Yogg-Saron", 1500, 3000), "10H");
+        difficulty.keeper_before(Some(1000));
+        assert_eq!(difficulty.mode("Yogg-Saron", 1500, 3000), "10N");
+    }
 
     #[test]
     fn boss_pull_ends_at_kill_before_aura_cleanup() {

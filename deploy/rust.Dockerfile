@@ -3,6 +3,8 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY config/encounters.json config/combat-rules.json config/report-appearance.json config/
 COPY config/rankings.json config/server_phases.json config/
+COPY config/encounter-modes.json config/
+COPY config/combined-spells.json config/
 COPY src/ src/
 COPY static/aura_icons.json static/spells_icons.json static/
 RUN cargo build --release --locked --jobs 8
@@ -15,6 +17,7 @@ RUN apt-get update \
     && mkdir -p /data/LogsDir /data/uploads \
     && chown -R raidledger /data
 COPY --from=build /build/target/release/raidledger /usr/local/bin/raidledger
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY templates/ /app/templates/
 COPY static/ /app/static/
 RUN chmod -R a+rX /app/templates /app/static

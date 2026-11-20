@@ -23,6 +23,8 @@ struct Record {
     id: String,
     high: String,
     difficulty: u32,
+    guild: Option<String>,
+    faction: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -39,6 +41,10 @@ pub struct Key {
 pub struct Lockout {
     key: Key,
     reset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guild: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub faction: Option<u8>,
 }
 
 impl Lockout {
@@ -136,9 +142,23 @@ impl Manifest {
         if max_reset - min_reset > 600 {
             return None;
         }
+        let latest = candidates.into_iter().max_by_key(|row| row.time)?;
+        let guild = latest
+            .guild
+            .as_ref()
+            .filter(|value| {
+                !value.is_empty() && value.len() <= 120 && !value.chars().any(char::is_control)
+            })
+            .cloned();
         Some(Lockout {
             key: keys.into_iter().next()?,
-            reset: candidates.into_iter().max_by_key(|row| row.time)?.reset,
+            reset: latest.reset,
+            guild,
+            faction: match latest.faction.as_deref() {
+                Some("Alliance") => Some(0),
+                Some("Horde") => Some(1),
+                _ => None,
+            },
         })
     }
 }

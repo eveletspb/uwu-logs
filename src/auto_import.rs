@@ -583,12 +583,16 @@ fn resolve_realm(realm: String, realms: &BTreeMap<String, String>) -> String {
 fn saved_manifest(game: &Path, realms: &BTreeMap<String, String>) -> io::Result<Value> {
     let saved = saved_variables(game)?;
     let mut records = saved.iter().flat_map(|entry| entry.split('"')).filter_map(|row| {
-        let [time, realm, player, instance, id, high, difficulty, reset, session] =
-            row.strip_prefix("RAL2|")?.split('|').collect::<Vec<_>>().try_into().ok()?;
+        let fields = row.strip_prefix("RAL2|")?.split('|').collect::<Vec<_>>();
+        let [time, realm, player, instance, id, high, difficulty, reset, session, optional @ ..] = fields.as_slice() else {
+            return None;
+        };
         let server = resolve_realm(hex(realm)?, realms);
+        let guild = optional.first().and_then(|value| hex(value));
+        let faction = optional.get(1).and_then(|value| hex(value));
         Some(json!({"time":time.parse::<u64>().ok()?, "server":server, "player":hex(player)?,
             "instance":hex(instance)?, "id":hex(id)?, "high":hex(high)?, "difficulty":difficulty.parse::<u32>().ok()?,
-            "reset":reset.parse::<u64>().ok()?, "session":session.parse::<u64>().ok()?}))
+            "reset":reset.parse::<u64>().ok()?, "session":session.parse::<u64>().ok()?, "guild":guild, "faction":faction}))
     }).collect::<Vec<_>>();
     records.sort_by_key(|value| std::cmp::Reverse(value["time"].as_u64().unwrap_or(0)));
     records.truncate(2000);
