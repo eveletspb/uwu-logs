@@ -3,7 +3,7 @@
 {% block scripts_head %}
 <script src="/static/js/protobuf-7.4.0.min.js"></script>
 <script src="/static/js/pako_deflate-2.1.0.es5.min.js"></script>
-<script type="module" src="/static/character.js?v=3"></script>
+<script type="module" src="/static/character.js?v=4"></script>
 <script type="module" src="/static/gear_tooltip.js?v=3"></script>
 {% endblock scripts_head %}
 
@@ -46,6 +46,17 @@
   <div id="gear-block">
     <div id="loading-gear" class="info">Loading gear data...</div>
     <div id="missing-gear" class="info error" style="display: none;">No gear snapshots found for this character.</div>
+    <div id="gear-offline" class="info error" hidden>Источник экипировки временно недоступен.</div>
+    <section id="live-equipment" hidden aria-labelledby="live-equipment-title">
+      <h2 id="live-equipment-title">Экипировка</h2>
+      <p id="live-equipment-character"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Слот</th><th>Предмет</th><th>Уровень предмета</th><th>Чары и камни</th></tr></thead>
+          <tbody id="live-equipment-items"></tbody>
+        </table>
+      </div>
+    </section>
     <div id="server-no-cache" class="info error" style="display: none;">Server doesn't have gear cache yet.</div>
     <section id="gear-wrap" style="display: none;">
       <div id="gear-left">

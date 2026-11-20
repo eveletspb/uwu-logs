@@ -24,10 +24,15 @@ const CHAR_RACE = document.getElementById("char-race");
 const GEAR_WRAP = document.getElementById("gear-wrap");
 const LOADING_INFO = document.getElementById("loading-gear");
 const NO_GEAR_INFO = document.getElementById("missing-gear");
+const GEAR_OFFLINE = document.getElementById("gear-offline");
+const LIVE_EQUIPMENT = document.getElementById("live-equipment");
 const NO_CACHE_INFO = document.getElementById("server-no-cache");
 const TABLE_STATS_BODY = document.getElementById("table-stats-body");
 
 const GEAR_SLOTS = Array.from(document.querySelectorAll(".slot"));
+const SLOT_NAMES = ["Голова", "Шея", "Плечи", "Рубашка", "Грудь", "Пояс", "Ноги", "Ступни",
+  "Запястья", "Кисти рук", "Кольцо 1", "Кольцо 2", "Аксессуар 1", "Аксессуар 2",
+  "Спина", "Правая рука", "Левая рука", "Дальний бой", "Гербовая накидка"];
 
 const URL_PREFIX_TALENTS = "https://aowow.trinitycore.info/?talent#";
 const URL_PREFIX_CHARACTER = "/gear";
@@ -200,6 +205,8 @@ export default class Gear {
   init() {
     NO_GEAR_INFO.style.display = "none";
     NO_CACHE_INFO.style.display = "none";
+    GEAR_OFFLINE.hidden = true;
+    LIVE_EQUIPMENT.hidden = true;
     GEAR_WRAP.dataset.server = this.SERVER;
     const loading_timeout = setTimeout(() => {
       GEAR_WRAP.style.display = "none";
@@ -216,13 +223,14 @@ export default class Gear {
       }
       GEAR_WRAP.style.display = "none";
       LOADING_INFO.style.display = "none";
-      NO_GEAR_INFO.style.removeProperty("display");
+      if (response.status >= 500) GEAR_OFFLINE.hidden = false;
+      else NO_GEAR_INFO.style.removeProperty("display");
     }).catch(() => {
       clearTimeout(loading_timeout);
       if (this.abort.signal.aborted) return;
       LOADING_INFO.style.display = "none";
       GEAR_WRAP.style.display = "none";
-      NO_GEAR_INFO.style.removeProperty("display");
+      GEAR_OFFLINE.hidden = false;
     });
   }
   dispose() {
@@ -233,6 +241,10 @@ export default class Gear {
   parse_json(response) {
     response.json().then(data => {
       if (this.abort.signal.aborted) return;
+      if (data.live_equipment) {
+        this.showLiveEquipment(data.live_equipment);
+        return;
+      }
       if (!Object.keys(data).length) throw new Error("No gear snapshots");
       this.CHAR_DATA = data;
       this.SET_NAMES = Object.keys(data);
@@ -252,6 +264,25 @@ export default class Gear {
     }).finally(() => {
       if (!this.abort.signal.aborted) LOADING_INFO.style.display = "none";
     });
+  }
+  showLiveEquipment(profile) {
+    GEAR_WRAP.style.display = "none";
+    document.getElementById("live-equipment-character").textContent =
+      [profile.name, `уровень ${profile.level}`, profile.spec].filter(Boolean).join(" · ");
+    const rows = profile.equipment.map(item => {
+      const row = document.createElement("tr");
+      row.dataset.itemId = item.itemEntry;
+      const name = item.nameRu || item.name || `#${item.itemEntry}`;
+      const effects = item.enchantments.map(effect => effect.nameRu || effect.name).filter(Boolean);
+      for (const [index, value] of [SLOT_NAMES[item.slot], name, item.itemLevel, effects.join(" · ") || "—"].entries()) {
+        const cell = row.insertCell();
+        if (index === 1) cell.className = QUALITY_COLOR[item.quality] || "";
+        cell.textContent = value;
+      }
+      return row;
+    });
+    document.getElementById("live-equipment-items").replaceChildren(...rows);
+    LIVE_EQUIPMENT.hidden = false;
   }
   handleEvent(event) {
     if (event.type == "click") this.apply_new_set(event.target);

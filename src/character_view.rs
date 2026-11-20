@@ -6,7 +6,7 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use minijinja::context;
 use raidledger::rankings::{self, Rank, RankQuery};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
@@ -26,9 +26,19 @@ pub struct Realms {
 struct Realm {
     rank_api: Option<String>,
     gear_api: Option<String>,
+    #[serde(default)]
+    gear_format: GearFormat,
     gear_assets: Option<String>,
     gear_missing: Option<String>,
     armory: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum GearFormat {
+    #[default]
+    Snapshots,
+    Azerothcore,
 }
 
 impl Realms {
@@ -43,6 +53,16 @@ impl Realms {
         };
         let config: Self = serde_json::from_slice(&bytes)?;
         for realm in config.servers.values() {
+            if matches!(realm.gear_format, GearFormat::Azerothcore)
+                && realm
+                    .gear_api
+                    .as_ref()
+                    .is_some_and(|url| url.contains(['?', '#']))
+            {
+                return Err(io::Error::other(
+                    "AzerothCore gear API must be a collection URL",
+                ));
+            }
             for url in [
                 &realm.rank_api,
                 &realm.gear_api,
@@ -231,15 +251,22 @@ pub async fn gear(
     State(app): State<App>,
     UrlPath((server, name)): UrlPath<(String, String)>,
 ) -> Result<Json<Value>, Error> {
-    let url = app
+    let realm = app
         .realms
         .get(&server)
-        .and_then(|realm| realm.gear_api.as_deref())
+        .filter(|realm| realm.gear_api.is_some())
         .ok_or(Error(
             StatusCode::NOT_FOUND,
             "No gear provider configured for this realm",
         ))?;
-    let url = expand(url, &server, &name);
+    let url = expand(realm.gear_api.as_deref().unwrap(), &server, &name);
+    if matches!(realm.gear_format, GearFormat::Azerothcore) {
+        return blocking(move || {
+            let profile = azerothcore_gear(url.trim_end_matches('/'), &name)?;
+            Ok(Json(serde_json::json!({"live_equipment": profile})))
+        })
+        .await;
+    }
     blocking(move || {
         let (status, data) = provider("GET", &url, None)?;
         require_asset(status)?;
@@ -251,6 +278,101 @@ pub async fn gear(
         Ok(Json(value))
     })
     .await
+}
+
+#[derive(Deserialize)]
+struct CharacterLookup {
+    data: Vec<CharacterIdentity>,
+}
+
+#[derive(Deserialize)]
+struct CharacterIdentity {
+    guid: u32,
+    name: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct LiveEquipment {
+    name: String,
+    level: u8,
+    spec: Option<String>,
+    equipment: Vec<LiveItem>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveItem {
+    slot: u8,
+    item_entry: u32,
+    name: String,
+    name_ru: Option<String>,
+    item_level: u16,
+    quality: u8,
+    #[serde(default)]
+    enchantments: Vec<LiveEnchantment>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LiveEnchantment {
+    name: String,
+    name_ru: Option<String>,
+}
+
+fn azerothcore_gear(collection: &str, name: &str) -> Result<LiveEquipment, Error> {
+    if name.is_empty() || name.chars().count() > 24 || !name.chars().all(char::is_alphabetic) {
+        return Err(Error(StatusCode::BAD_REQUEST, "Invalid character name"));
+    }
+    let query = format!("{collection}?names={}&limit=2", path_segment(name));
+    let lookup: CharacterLookup = gear_json(&query)?;
+    let identity = lookup
+        .data
+        .into_iter()
+        .find(|identity| identity.name.to_lowercase() == name.to_lowercase())
+        .ok_or(Error(
+            StatusCode::NOT_FOUND,
+            "Character not found on this realm",
+        ))?;
+    let mut profile: LiveEquipment = gear_json(&format!("{collection}/{}", identity.guid))?;
+    if profile.name != identity.name {
+        return Err(Error(
+            StatusCode::BAD_GATEWAY,
+            "Unexpected character profile",
+        ));
+    }
+    profile
+        .equipment
+        .retain(|item| item.item_entry != 0 && item.slot < 19);
+    profile.equipment.sort_by_key(|item| item.slot);
+    Ok(profile)
+}
+
+fn gear_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T, Error> {
+    let (status, data) = provider("GET", url, None)?;
+    require_asset(status)?;
+    serde_json::from_slice(&data)
+        .map_err(|_| Error(StatusCode::BAD_GATEWAY, "Invalid gear response"))
+}
+
+#[cfg(test)]
+mod gear_tests {
+    use super::LiveEquipment;
+    use serde_json::{json, to_value};
+
+    #[test]
+    fn core_equipment_projection_excludes_private_character_fields() {
+        let profile: LiveEquipment = serde_json::from_value(json!({
+            "name": "Sbol", "level": 60, "spec": "Survival", "accountId": 1, "money": 24,
+            "equipment": [{"slot": 0, "itemEntry": 16939, "name": "Helm",
+                "itemLevel": 76, "quality": 4, "instanceGuid": 12345}]
+        }))
+        .unwrap();
+        let public = to_value(profile).unwrap();
+        assert_eq!(public["equipment"][0]["itemEntry"], 16939);
+        assert!(public.get("accountId").is_none());
+        assert!(public.get("money").is_none());
+        assert!(public["equipment"][0].get("instanceGuid").is_none());
+    }
 }
 
 pub async fn gear_asset(

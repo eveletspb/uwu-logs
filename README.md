@@ -204,7 +204,8 @@ Use the server names that appear in your RaidLedger report IDs.
 | Optional field under `servers.<realm>` | Behavior |
 | --- | --- |
 | `rank_api` | Full URL for a POST with `server`, `boss`, `mode`, and the `dps` and `specs` maps keyed by player name. Return a map keyed by player name with `rank`, `percentile`, `from_spec_top1`, and `total_raids_for_spec`. Omit it to compute ranks from the realm's local reports. |
-| `gear_api` | Full GET URL for gear snapshots using `{server}` and `{name}`. Return a JSON object keyed by snapshot timestamp. Each snapshot contains `class`, `race`, `level`, `gear_data`, `specs`, and `profs`. |
+| `gear_api` | Full GET URL for gear snapshots using `{server}` and `{name}`. With `gear_format: "azerothcore"`, set this to the AzerothCore Server API collection URL ending in `/api/v1/characters`, without a query. |
+| `gear_format` | Defaults to `snapshots`. With `azerothcore`, RaidLedger resolves the character name on that realm, reads the current equipment by GUID, and displays item names, levels and enchantments. The Server API must be reachable from the RaidLedger container. |
 | `gear_assets` | Base URL for gear metadata under `item/<id>.json`, `enchant/<id>.json`, and `icons/<name>.jpg`. |
 | `gear_missing` | Full PUT URL for requesting missing assets. The app supplies the `type` and `id` query parameters. |
 | `armory` | Character link template using `{server}` and `{name}`. The link appears when configured. |
