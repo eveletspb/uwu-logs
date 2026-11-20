@@ -131,6 +131,12 @@ tbody > tr:nth-child(odd) > td {
   padding-bottom: 5rem;
 }
 
+#table-container {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 select:disabled,
 input:disabled + label {
   opacity: .15;
@@ -160,7 +166,7 @@ input:disabled + label {
   max-width: 58rem;
   padding-bottom: var(--padding-top);
   background-color: var(--background);
-  z-index: 5;
+  z-index: 50;
 }
 #controls {
   display: grid;

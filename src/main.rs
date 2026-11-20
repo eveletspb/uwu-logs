@@ -1,5 +1,6 @@
 mod auto_import;
 mod player_view;
+mod ranking_view;
 mod report_view;
 mod section_view;
 mod upload;
@@ -28,6 +29,7 @@ struct App {
     root: Arc<PathBuf>,
     templates: Arc<Environment<'static>>,
     uploads: Arc<upload::Uploads>,
+    rankings: Arc<std::sync::Mutex<raidledger::rankings::Index>>,
     legacy_groups: Arc<LegacyGroups>,
     worker_status: auto_import::Status,
     viewer: Option<String>,
@@ -1065,6 +1067,7 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         root: Arc::new(root),
         templates: Arc::new(templates),
         uploads: Arc::new(upload::Uploads::default()),
+        rankings: Arc::default(),
         worker_status,
         viewer,
     };
@@ -1072,6 +1075,20 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .route("/", get(library))
         .route("/about", get(about))
         .route("/support", get(about))
+        .route("/top", get(ranking_view::page).post(ranking_view::top))
+        .route(
+            "/pve_stats",
+            get(ranking_view::page).post(ranking_view::stats),
+        )
+        .route(
+            "/top_stats",
+            get(ranking_view::page).post(ranking_view::stats),
+        )
+        .route("/top_points", axum::routing::post(ranking_view::points))
+        .route(
+            "/top_speedrun",
+            axum::routing::post(ranking_view::speedruns),
+        )
         .route("/logs_list", get(library).post(library_filter))
         .route("/raid_calendar", get(library))
         .route("/local-health", get(health))

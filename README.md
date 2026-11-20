@@ -5,7 +5,7 @@ Import a log and browse the raid, boss attempts, and individual player
 performance in your browser. The Rust server handles imports, report storage,
 and exports. Reports are stored on the machine running RaidLedger.
 
-[Quick start](#quick-start) · [Automatic import](#automatic-import-and-remote-viewing) · [Docker](#docker) · [Report storage](#report-storage-and-migration) · [Downloads](#downloads-and-json-metrics)
+[Quick start](#quick-start) · [Automatic import](#automatic-import-and-remote-viewing) · [Docker](#docker) · [Report storage](#report-storage-and-migration) · [Downloads](#downloads-and-json-metrics) · [Rankings](#rankings-and-pve-statistics)
 
 ## Explore a raid
 
@@ -173,12 +173,19 @@ duration is the sum of those attempts. Outgoing damage includes attributed
 pets. Effective healing subtracts overhealing and includes attributed absorbs.
 DPS, HPS, and DTPS are `null` when the duration is zero.
 
-## Migration scope
+## Rankings and PvE statistics
 
-The Rust migration replaced the Python applications and removed their
-dependency lists. The upstream `/top` leaderboards and `/pve_stats` DPS
-percentiles ran on a separate rankings service and are outside the current
-RaidLedger feature set.
+Open `/top` to compare useful and total DPS across recorded kills. Filter by
+realm, boss, difficulty, class, specialization, or external buffs. The **Best**
+option keeps the highest-ranked result for each character. The **Points** view
+uses the realm's configured progression phase. The **Speedrun** view uses reports
+with a complete set of kills for the selected raid and difficulty. Its author
+column comes from the report metadata.
+
+Open `/pve_stats` to compare useful DPS percentiles by specialization. The
+calculation uses the best useful DPS per character and day, with at least five
+ranked results per specialization. Both pages are rebuilt from the stored combat
+logs, including legacy reports, and refresh when report files change.
 
 ## Development checks
 

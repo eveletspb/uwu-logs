@@ -3,11 +3,9 @@
 {% block head_meta %}
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, user-scalable=no" />
-<title>RaidLedger - Top</title>
 
 <meta name="title" content="RaidLedger - Top">
 <meta name="description" content="Players Top for RaidLedger.">
-<link rel="shortcut icon" href="/favicon.ico">
 
 <meta property="og:type" content="website">
 <meta property="og:title" content="RaidLedger - Top">
@@ -19,15 +17,19 @@
 {% endblock head_meta %}
 
 {% block add_css_file %}
-<link rel="stylesheet" type="text/css" href="/static/top.css?v=241112-1">
+<link rel="stylesheet" type="text/css" href="/static/top.css?v=raidledger-1">
+<link rel="stylesheet" href="/static/class-picker.css?v=1">
 {% endblock add_css_file %}
 
 {% block scripts_head %}
-<script type="module" src="static/top.js?v=241113-1"></script>
+<script type="module" src="/static/top.js?v=raidledger-1"></script>
 {% endblock scripts_head %}
 
 {% block the_main %}
 <main>
+<script id="ranking-raids" type="application/json">{{ RAID_BOSSES|tojson }}</script>
+<script id="ranking-default" type="application/json">{{ DEFAULT_FIGHT|tojson }}</script>
+<p><a href="/pve_stats">PvE Statistics</a></p>
 <div id="controls-wrap">
   <section id="controls">
     <select id="select-server">
@@ -93,7 +95,7 @@
         <th colspan="2">Length</th>
       </tr>
       <tr>
-        <th>Guild</th>
+        <th>Author</th>
         <th id="head-speedrun-total-length" class="sortable">Total</th>
         <th id="head-speedrun-segments-sum" class="sortable">Segments</th>
         <th>Date</th>

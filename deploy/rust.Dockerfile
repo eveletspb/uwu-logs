@@ -2,6 +2,7 @@ FROM rust:1-slim-trixie AS build
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY config/encounters.json config/combat-rules.json config/report-appearance.json config/
+COPY config/rankings.json config/server_phases.json config/
 COPY src/ src/
 COPY static/aura_icons.json static/spells_icons.json static/
 RUN cargo build --release --locked --jobs 8

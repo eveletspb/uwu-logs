@@ -7,6 +7,7 @@ mod encounters;
 pub mod lockouts;
 pub mod mechanics;
 pub mod metrics;
+pub mod rankings;
 pub mod reports;
 pub mod storage;
 pub mod timeline;

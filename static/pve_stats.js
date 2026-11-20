@@ -23,6 +23,11 @@ const BOSSES = {
   "The Eye of Eternity": ["Malygos"],
   "The Obsidian Sanctum": ["Sartharion"],
 };
+const defaultFight = JSON.parse(document.getElementById('ranking-default').textContent);
+for (const [raid, bosses] of Object.entries(JSON.parse(document.getElementById('ranking-raids').textContent))) {
+  BOSSES[raid] = [...new Set([...(BOSSES[raid] || []), ...bosses])];
+}
+const STATUS = document.getElementById('pve-status');
 const SELECT_SERVER = document.getElementById("select-server");
 const SELECT_INSTANCE = document.getElementById("select-instance");
 const SELECT_BOSS = document.getElementById("select-boss");
@@ -43,7 +48,6 @@ const INTERACTABLES = {
 
 const KEY_DPS = "dps";
 const KEY_QUANTITY = "raids";
-const CACHE = {};
 const xrequest = new XMLHttpRequest();
 const CONFIG = {
   tt_hide_timeout: undefined,
@@ -61,7 +65,7 @@ function remove_children(node) {
 function new_option(value, index) {
   const _option = document.createElement('option');
   _option.value = index === undefined ? value : index;
-  _option.innerHTML = value;
+  _option.textContent = value;
   return _option;
 }
 
@@ -146,8 +150,10 @@ function update_row(row, data) {
   cell.insertBefore(passthrudiv, cell.children[0]);
 }
 function table_add_new_data(data) {
-  const max_v = Math.max(...Object.values(data).map(d => d.top100[KEY_DPS]));
-  CONFIG.max_dps_value = Math.ceil((max_v+500)/1000)*1000;
+  const values = Object.values(data);
+  STATUS.textContent = values.length ? '' : 'No specializations with at least five ranked results for this selection.';
+  const max_v = Math.max(0, ...values.map(d => d.top100[KEY_DPS]));
+  CONFIG.max_dps_value = Math.max(1000, Math.ceil((max_v+500)/1000)*1000);
   CONFIG.dps_jump = Math.ceil(CONFIG.max_dps_value / 20000) * 1000;
   
   new_dps_columns();
@@ -166,31 +172,31 @@ xrequest.onreadystatechange = () => {
     BUTTON_SUBMIT.textContent = "Loading";
     return;
   }
-  if (xrequest.status != 200) return;
   BUTTON_SUBMIT.textContent = "Submit";
-  const data = JSON.parse(xrequest.response);
-  const query = make_query();
-  CACHE[query] = data;
-  table_add_new_data(data);
+  if (xrequest.status != 200) {
+    table_add_new_data({});
+    STATUS.textContent = 'Could not load PvE statistics.';
+    return;
+  }
+  table_add_new_data(JSON.parse(xrequest.response));
 }
 
 function query_server(query) {
-  xrequest.open("POST", '');
+  xrequest.open("POST", "/pve_stats");
   xrequest.setRequestHeader("Content-Type", "application/json");
   xrequest.send(query);
 }
 
 function fetch_data() {
-  const query = make_query();
-  const data = CACHE[query];
-  data ? table_add_new_data(data) : query_server(query);
+  if (!SELECT_SERVER.value) return table_add_new_data({});
+  query_server(make_query());
 }
 
 function search_changed() {
   if (xrequest.readyState != 4 && xrequest.readyState != 0) return;
 
   const difficulty = CHECKBOX_DIFFICULTY.checked ? 'H' : "N";
-  const title = `RaidLedger - Top - ${SELECT_BOSS.value} - ${SELECT_SIZE.value}${difficulty}`;
+  const title = `RaidLedger - PvE Statistics - ${SELECT_BOSS.value} - ${SELECT_SIZE.value}${difficulty}`;
   document.title = title;
 
   const parsed = {
@@ -281,7 +287,8 @@ function init() {
     if (is_valid_param(elm, par)) {
       elm.value = par;
     } else if (elm == SELECT_SERVER) {
-      elm.selectedIndex = find_value_index(elm, "Lordaeron");
+      const index = find_value_index(elm, "Lordaeron");
+      elm.selectedIndex = Math.max(0, index);
     } else {
       elm.selectedIndex = 0;
     }
@@ -291,6 +298,14 @@ function init() {
     }
   }
 
+  const initialRaid = defaultFight && Object.keys(BOSSES).find(raid => BOSSES[raid].includes(defaultFight[0]));
+  if (initialRaid && !currentParams.has("raid") && !currentParams.has("boss")) {
+    SELECT_INSTANCE.value = initialRaid;
+    add_bosses();
+    SELECT_BOSS.value = defaultFight[0];
+    SELECT_SIZE.value = defaultFight[1].slice(0, 2);
+    CHECKBOX_DIFFICULTY.checked = defaultFight[1].endsWith("H");
+  }
   SELECT_INSTANCE.addEventListener("change", add_bosses);
   BUTTON_SUBMIT.addEventListener("click", search_changed);
   add_tooltip_events();
@@ -298,7 +313,7 @@ function init() {
   search_changed();
 
   const button_click = e => {
-    const sortby = `data-${e.target.className}-${KEY_DPS}`;
+    const sortby = `data-${e.currentTarget.className}-${KEY_DPS}`;
     Array.from(TBODY_STATS.children)
     .sort(rows_sort_func(sortby))
     .forEach(tr => TBODY_STATS.appendChild(tr));

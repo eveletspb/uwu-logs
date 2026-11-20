@@ -1,10 +1,17 @@
+import {attachClassPicker} from './class-picker.js?v=1';
 import {
-  BOSSES,
+  BOSSES as LEGACY_BOSSES,
   CLASSES,
   SPECS,
   SPECS_SELECT_OPTIONS,
   MONTHS,
 } from "./constants.js?v=240909-1";
+
+const BOSSES = {...LEGACY_BOSSES};
+for (const [raid, bosses] of Object.entries(JSON.parse(document.getElementById('ranking-raids').textContent))) {
+  BOSSES[raid] = [...new Set([...(BOSSES[raid] || []), ...bosses])];
+}
+const defaultFight = JSON.parse(document.getElementById('ranking-default').textContent);
 
 console.time("aura_icons fetch");
 const AURAS_ICONS = await fetch("/static/aura_icons.json").then(response => response.json());
@@ -104,7 +111,7 @@ const IRRELEVANT_FOR_SPEEDRUN = [
 
 const ROW_LIMIT = 1000;
 const is_landscape = window.matchMedia("(orientation: landscape)");
-const TOP_POST = window.location.pathname;
+const TOP_POST = "/top";
 const BOSSES_WITH_HEROIC_MODE = new Set([
   "Halion",
   "XT-002 Deconstructor",
@@ -143,7 +150,7 @@ const TABLES = [
   TABLE_TOP,
   TABLE_SPEEDRUN,
 ];
-const REQUESTS_CACHE = {};
+let refreshClassPicker = () => {};
 
 function _css_rule(key) {
   const style = document.createElement("style");
@@ -185,7 +192,6 @@ const TOGGLE_COLUMNS = {
 function get_icon_link(icon_name) {
   return `/static/icons/${icon_name}.jpg`;
 }
-const DEFAULT_ICON = get_icon_link("undefined");
 const FACTIONS_ICONS = {
   0: `/static/alliance.png`,
   1: `/static/horde.png`,
@@ -276,8 +282,8 @@ function add_inner_text(element, text) {
   element.append(text);
 }
 
-function cell_name(name, spec) {
-  const [spec_name, spec_icon, spec_class_id] = SPECS[spec];
+function cell_name(name, spec, reportId) {
+  const [spec_name, spec_icon, spec_class_id] = SPECS[spec] ?? ["Unknown", "inv_misc_questionmark", "unknown"];
 
   const td = document.createElement('td');
   td.classList.add("table-n");
@@ -287,10 +293,13 @@ function cell_name(name, spec) {
   img.src = get_icon_link(spec_icon);
   td.appendChild(img);
 
-  const a = document.createElement('a');
+  const a = document.createElement(reportId ? 'a' : 'span');
   a.classList.add(spec_class_id);
-  a.href = `/character?name=${name}&server=${SELECT_SERVER.value}&spec=${spec % 4}`;
-  a.target = "_blank";
+  if (reportId) {
+    a.href = `${report_path(reportId)}player/${encodeURIComponent(name)}/${fight_query()}`;
+    a.target = "_blank";
+    a.rel = "noopener";
+  }
   a.append(name);
   td.appendChild(a);
 
@@ -300,8 +309,10 @@ function cell_guild(guild_name, faction) {
   const guild_cell = document.createElement('td');
   guild_cell.classList.add("table-n");
   const img = document.createElement("img");
-  img.src = FACTIONS_ICONS[faction] ?? DEFAULT_ICON;
-  guild_cell.appendChild(img);
+  if (FACTIONS_ICONS[faction]) {
+    img.src = FACTIONS_ICONS[faction];
+    guild_cell.appendChild(img);
+  }
   guild_cell.append(guild_name);
   return guild_cell
 }
@@ -360,6 +371,16 @@ function cell_duration_hours(value) {
   return td;
 }
 
+function report_path(id) {
+  return `/reports/${encodeURIComponent(id + '--' + SELECT_SERVER.value)}/`;
+}
+
+function fight_query() {
+  const name = SELECT_BOSS.value === "Sulfuron Harbinger" ? "Sulfuron Harbringer" : SELECT_BOSS.value;
+  const boss = name.toLowerCase().replaceAll(" ", "-").replaceAll("'", "");
+  return `?${new URLSearchParams({boss, mode: selected_difficuty(), attempt: 'kill'})}`;
+}
+
 function cell_date(report_ID) {
   const report_date = report_ID.toString().slice(0, 15);
   const [year, month, day, _, hour, minute] = report_date.split('-');
@@ -367,11 +388,9 @@ function cell_date(report_ID) {
   const date_text = is_landscape.matches ? `${day} ${months_str} ${year} ${hour}:${minute}` : `${day} ${months_str} ${year}`;
 
   const a = document.createElement('a');
-  const boss = SELECT_BOSS.value.toLowerCase().replaceAll(" ", "-").replaceAll("'", "");
-  const link_root = `/reports/${report_ID}--${SELECT_SERVER.value}`;
-  const link_query = `?boss=${boss}&mode=${selected_difficuty()}&attempt=kill`;
-  a.href = `${link_root}/${link_query}`;
+  a.href = report_path(report_ID) + (speedrun_selected() ? '' : fight_query());
   a.target = "_blank";
+  a.rel = "noopener";
   a.append(date_text);
 
   const td = document.createElement('td');
@@ -480,7 +499,7 @@ function table_new_row_default(_data) {
   ] = _data;
 
   [
-    cell_name(name, spec),
+    cell_name(name, spec, report_ID),
     cell_dps(uAmount / duration, DATA_KEYS.uAmount),
     cell_total(uAmount, DATA_KEYS.uAmount),
     cell_dps(tAmount / duration, DATA_KEYS.tAmount),
@@ -665,7 +684,7 @@ const TopRequest = new class extends XMLHttpRequest {
   }
   _onprogress(e) {
     const contentLength = e.lengthComputable ? e.total : this._get_full_length();
-    update_progress_bar(e.loaded, contentLength, true);
+    if (contentLength > 0) update_progress_bar(e.loaded, contentLength, true);
   }
   _get_full_length() {
     return parseInt(this.getResponseHeader('Content-Length-Full'));
@@ -674,22 +693,19 @@ const TopRequest = new class extends XMLHttpRequest {
     console.timeEnd("TopRequest | Response");
     LOADING_INFO_PANEL.style.display = "none";
 
-    if (this.status == 500) this.show_error("Server error!"); 
-  
-    const not_json = this.getResponseHeader("content-type") != "application/json";
-    if (not_json) return this.show_error("Server error!");
+    if (this.status < 200 || this.status >= 300) {
+      return this.show_error(this.responseText || "Could not load rankings.");
+    }
   
     const data_parsed = this.response_json();
     const current_query = make_query();
     
     if (data_parsed.length != 0) {
       if (current_query != this.current_query) return;
-      REQUESTS_CACHE[current_query] = data_parsed;
-      table_add_new_data_wrap(data_parsed);
+        table_add_new_data_wrap(data_parsed);
       return;
     }
   
-    REQUESTS_CACHE[current_query] = [];
   
     try {
       const error_msg = data_parsed.detail[0].msg;
@@ -714,15 +730,15 @@ const TopRequest = new class extends XMLHttpRequest {
 }
 
 function new_state() {
+  refreshClassPicker();
   LOADING_INFO.textContent = "Downloading top:";
   TABLE_CONTAINER.style.display = "none";
   SECTION_NO_DATA.style.display = "none";
   SECTION_ON_ERROR.style.display = "none";
   LOADING_INFO_PANEL.style.removeProperty("display");
   
-  const query = make_query();
-  const data = REQUESTS_CACHE[query];
-  data ? table_add_new_data_wrap(data) : TopRequest.get_new_data(query);
+  if (!SELECT_SERVER.value) return TopRequest.show_no_data();
+  TopRequest.get_new_data(make_query());
 }
 
 function fetch_column(event) {
@@ -768,11 +784,11 @@ function find_value_index(select, option_name) {
 function get_default_index(select) {
   switch (select) {
     case SELECT_SERVER:
-      return find_value_index(select, "Lordaeron");
+      return find_value_index(select, "Lordaeron") ?? 0;
     case SELECT_CLASS:
-      return find_value_index(select, "Priest");
+      return 0;
     case SELECT_SPEC:
-      return DEFAULT_SPEC[SELECT_CLASS.value];
+      return DEFAULT_SPEC[SELECT_CLASS.value] ?? 0;
     default:
       return 0;
   }
@@ -846,7 +862,7 @@ function init_other_elements() {
 function new_option(value, index) {
   const option = document.createElement('option');
   option.value = index === undefined ? value : index;
-  option.innerHTML = value;
+  option.textContent = value;
   return option;
 }
 
@@ -925,10 +941,22 @@ function init() {
   Object.keys(BOSSES).forEach(name => SELECT_RAID.appendChild(new_option(name)));
   CLASSES.forEach((name, i) => SELECT_CLASS.appendChild(new_option(name, i)));
   
+  const storedRaid = LOCAL_STORAGE.get(SELECT_RAID);
   const search_params = new URLSearchParams(window.location.search);
   search_params.size ? init_from_query(search_params) : init_from_localstorage();
+  const initialRaid = defaultFight && Object.keys(BOSSES).find(raid => BOSSES[raid].includes(defaultFight[0]));
+  if (initialRaid && !search_params.has('raid') && !storedRaid) {
+    SELECT_RAID.value = initialRaid;
+    on_change_instance();
+    SELECT_BOSS.value = defaultFight[0];
+    SELECT_SIZE.value = defaultFight[1].slice(0, 2);
+    CHECKBOX_DIFFICULTY.checked = defaultFight[1].endsWith('H');
+    SELECT_CLASS.value = '-1';
+    add_specs();
+  }
 
   init_other_elements();
+  refreshClassPicker = attachClassPicker(SELECT_CLASS, true);
 
   add_extra_function();
   add_refresh_on_change();

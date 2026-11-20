@@ -55,6 +55,10 @@ pub(crate) fn specialization(class: &str, spell: &str) -> Option<u8> {
     APPEARANCE.spec_book.get(class)?.get(spell).copied()
 }
 
+pub fn class_specs(class: &str) -> Option<&'static [(String, String)]> {
+    APPEARANCE.specs.get(class).map(Vec::as_slice)
+}
+
 static ICONS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     let by_icon: BTreeMap<&str, BTreeMap<&str, serde::de::IgnoredAny>> =
         serde_json::from_str(include_str!("../static/spells_icons.json"))

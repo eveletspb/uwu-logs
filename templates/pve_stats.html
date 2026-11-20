@@ -1,13 +1,16 @@
 {% extends "layout.html" %}
 {% block scripts_head %}
-<script src="/static/pve_stats.js?v=240814-1" async defer></script>
+<script src="/static/pve_stats.js?v=raidledger-1" async defer></script>
 {% endblock scripts_head %}
 {% block add_css_file %}
-<link rel="stylesheet" type="text/css" href="/static/pve_stats.css?v=240814-1">
+<link rel="stylesheet" type="text/css" href="/static/pve_stats.css?v=raidledger-1">
 {% endblock add_css_file %}
 
 {% block the_main %}
 <main>
+<script id="ranking-raids" type="application/json">{{ RAID_BOSSES|tojson }}</script>
+<script id="ranking-default" type="application/json">{{ DEFAULT_FIGHT|tojson }}</script>
+<p><a href="/top">Rankings</a></p>
   <section id="controls">
     <select id="select-server">
       {% for server in SERVERS %}
@@ -26,13 +29,14 @@
     <label id="difficulty-label" for="difficulty-checkbox">Heroic</label>
     <button id="submit-button" type="submit">Submit</button>
   </section>
-	<section id="stats-section">
+	<p id="pve-status" role="status"></p>
+  <section id="stats-section">
     <div id="table-wrap">
       <div id="chart-timeline"></div>
       <table>
         <tbody id="stats-tbody">
           {% for spec_info in SPECS_BASE %}
-          <tr class="stats-cell-row {{ spec_info.class_name_html }}" id="{{ spec_info.html_name }}" data-spec="{{ spec_info.name }}">
+          <tr class="stats-cell-row {{ spec_info.class }}" id="{{ spec_info.key }}" data-spec="{{ spec_info.name }}">
             <td class="stats-cell-name"><img src="/static/icons/{{ spec_info.icon }}.jpg">{{ spec_info.name }}</td>
             <td class="stats-cell-data"></td>
           </tr>

@@ -44,6 +44,13 @@ table {
   }
 }
 @media (orientation: portrait) {
+  #controls {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  #controls select {
+    min-width: 0;
+    width: 100%;
+  }
   #select-server {
     max-width: 8em;
   }
