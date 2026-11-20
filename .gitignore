@@ -24,6 +24,7 @@ nginx/
 parsed/
 static/enchant/
 static/icons/
+static/item-icons/
 static/item/
 static/gear/
 temp/

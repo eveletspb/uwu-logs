@@ -1,4 +1,4 @@
-import Gear from "./char_parser.js?v=5";
+import Gear from "./char_parser.js?v=6";
 import { SPECS } from "./constants.js?v=240830-1";
 
 const INFO_LOADING_POINTS = document.getElementById("loading-points");

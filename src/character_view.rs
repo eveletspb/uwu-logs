@@ -262,7 +262,19 @@ pub async fn gear(
     let url = expand(realm.gear_api.as_deref().unwrap(), &server, &name);
     if matches!(realm.gear_format, GearFormat::Azerothcore) {
         return blocking(move || {
-            let profile = azerothcore_gear(url.trim_end_matches('/'), &name)?;
+            let mut profile = azerothcore_gear(url.trim_end_matches('/'), &name)?;
+            for item in &mut profile.equipment {
+                item.icon = item
+                    .icon
+                    .take()
+                    .filter(|icon| resource_id(icon))
+                    .or_else(|| {
+                        app.item_icons
+                            .get(&item.display_id)
+                            .filter(|icon| resource_id(icon))
+                            .cloned()
+                    });
+            }
             Ok(Json(serde_json::json!({"live_equipment": profile})))
         })
         .await;
@@ -304,19 +316,70 @@ struct LiveEquipment {
 struct LiveItem {
     slot: u8,
     item_entry: u32,
+    #[serde(default, skip_serializing)]
+    display_id: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    icon: Option<String>,
     name: String,
     name_ru: Option<String>,
     item_level: u16,
     quality: u8,
     #[serde(default)]
-    enchantments: Vec<LiveEnchantment>,
+    armor: u32,
+    #[serde(default)]
+    block: u32,
+    #[serde(default)]
+    delay_ms: u32,
+    #[serde(default)]
+    damage: Vec<LiveDamage>,
+    #[serde(default)]
+    stats: Vec<LiveStat>,
+    #[serde(default)]
+    resistances: BTreeMap<String, i32>,
+    #[serde(default)]
+    spells: Vec<LiveEffect>,
+    #[serde(default)]
+    enchantments: Vec<LiveEffect>,
+    #[serde(default)]
+    random_property_enchantments: Vec<LiveEffect>,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LiveEnchantment {
+struct LiveEffect {
     name: String,
     name_ru: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct LiveStat {
+    #[serde(rename = "type")]
+    kind: u8,
+    value: i32,
+}
+
+#[derive(Deserialize, Serialize)]
+struct LiveDamage {
+    min: f64,
+    max: f64,
+    #[serde(rename = "type", default)]
+    school: u8,
+}
+
+pub fn load_item_icons(assets: &Path) -> BTreeMap<u32, String> {
+    let path = assets.join("static/item-icons/item-display-icons.json");
+    let result = std::fs::File::open(&path).and_then(|file| {
+        serde_json::from_reader(io::BufReader::new(file)).map_err(io::Error::other)
+    });
+    match result {
+        Ok(icons) => icons,
+        Err(error) => {
+            if error.kind() != io::ErrorKind::NotFound {
+                eprintln!("Cannot load item icons from {}: {error}", path.display());
+            }
+            BTreeMap::new()
+        }
+    }
 }
 
 fn azerothcore_gear(collection: &str, name: &str) -> Result<LiveEquipment, Error> {
@@ -364,11 +427,22 @@ mod gear_tests {
         let profile: LiveEquipment = serde_json::from_value(json!({
             "name": "Sbol", "level": 60, "spec": "Survival", "accountId": 1, "money": 24,
             "equipment": [{"slot": 0, "itemEntry": 16939, "name": "Helm",
-                "itemLevel": 76, "quality": 4, "instanceGuid": 12345}]
+                "itemLevel": 76, "quality": 4, "instanceGuid": 12345, "displayId": 34367,
+                "stats": [{"type": 3, "value": 27}],
+                "enchantments": [{"name": "Hit rating", "nameRu": "Рейтинг меткости", "id": 3754}]}]
         }))
         .unwrap();
         let public = to_value(profile).unwrap();
         assert_eq!(public["equipment"][0]["itemEntry"], 16939);
+        assert_eq!(
+            public["equipment"][0]["stats"],
+            json!([{"type": 3, "value": 27}])
+        );
+        assert_eq!(
+            public["equipment"][0]["enchantments"][0]["nameRu"],
+            "Рейтинг меткости"
+        );
+        assert!(public["equipment"][0].get("displayId").is_none());
         assert!(public.get("accountId").is_none());
         assert!(public.get("money").is_none());
         assert!(public["equipment"][0].get("instanceGuid").is_none());

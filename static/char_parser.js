@@ -1,3 +1,4 @@
+import { showLiveEquipment } from "./live_equipment.js?v=1";
 import { gearCache } from "./gear_cache.js?v=3";
 import {
   get_gs,
@@ -30,10 +31,6 @@ const NO_CACHE_INFO = document.getElementById("server-no-cache");
 const TABLE_STATS_BODY = document.getElementById("table-stats-body");
 
 const GEAR_SLOTS = Array.from(document.querySelectorAll(".slot"));
-const SLOT_NAMES = ["Голова", "Шея", "Плечи", "Рубашка", "Грудь", "Пояс", "Ноги", "Ступни",
-  "Запястья", "Кисти рук", "Кольцо 1", "Кольцо 2", "Аксессуар 1", "Аксессуар 2",
-  "Спина", "Правая рука", "Левая рука", "Дальний бой", "Гербовая накидка"];
-
 const URL_PREFIX_TALENTS = "https://aowow.trinitycore.info/?talent#";
 const URL_PREFIX_CHARACTER = "/gear";
 const RELEVANT_PROFS = ["Enchanting", "Blacksmithing"];
@@ -243,7 +240,8 @@ export default class Gear {
     response.json().then(data => {
       if (this.abort.signal.aborted) return;
       if (data.live_equipment) {
-        this.showLiveEquipment(data.live_equipment);
+        GEAR_WRAP.style.display = "none";
+        showLiveEquipment(data.live_equipment, this.abort.signal);
         return;
       }
       if (!Object.keys(data).length) throw new Error("No gear snapshots");
@@ -265,36 +263,6 @@ export default class Gear {
     }).finally(() => {
       if (!this.abort.signal.aborted) LOADING_INFO.style.display = "none";
     });
-  }
-  showLiveEquipment(profile) {
-    GEAR_WRAP.style.display = "none";
-    document.getElementById("live-equipment-character").textContent =
-      [`Уровень ${profile.level}`, profile.spec].filter(Boolean).join(" · ");
-    const rows = profile.equipment.map(item => {
-      const row = document.createElement("li");
-      row.dataset.itemId = item.itemEntry;
-      const slot = document.createElement("span");
-      slot.className = "equipment-slot";
-      slot.textContent = SLOT_NAMES[item.slot];
-      const name = document.createElement("strong");
-      name.className = QUALITY_COLOR[item.quality] || "";
-      name.textContent = item.nameRu || item.name || `#${item.itemEntry}`;
-      const level = document.createElement("span");
-      level.className = "equipment-level";
-      level.title = `Уровень предмета ${item.itemLevel}`;
-      level.textContent = item.itemLevel;
-      row.append(slot, name, level);
-      const effects = item.enchantments.map(effect => effect.nameRu || effect.name).filter(Boolean);
-      if (effects.length) {
-        const enchantments = document.createElement("span");
-        enchantments.className = "equipment-effects";
-        enchantments.textContent = effects.join(" · ");
-        row.append(enchantments);
-      }
-      return row;
-    });
-    document.getElementById("live-equipment-items").replaceChildren(...rows);
-    LIVE_EQUIPMENT.hidden = false;
   }
   handleEvent(event) {
     if (event.type == "click") this.apply_new_set(event.target);

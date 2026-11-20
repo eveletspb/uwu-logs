@@ -48,6 +48,12 @@ under a different name or outside your `PATH`. To display spell and
 specialization icons, unpack the icon files into `static/icons/` before
 starting the server or building the Docker image. [Upstream icon pack](https://drive.google.com/file/d/17DyiCJts01CkFIkd0-G1dVAypIlxd0pP)
 
+For live equipment icons, copy the `public/item-icons/` directory from
+SBAzeroth into `static/item-icons/` before starting RaidLedger or building its
+Docker image. It supplies the display ID map and WebP assets served locally.
+Item stats and enchantments are read from AzerothCore independently of the
+optional icon pack.
+
 ### Windows
 
 Build with `cargo build --locked --release --jobs 8` or place an existing

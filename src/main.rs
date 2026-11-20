@@ -33,6 +33,7 @@ struct App {
     uploads: Arc<upload::Uploads>,
     rankings: Arc<std::sync::Mutex<raidledger::rankings::Index>>,
     realms: Arc<character_view::Realms>,
+    item_icons: Arc<std::collections::BTreeMap<u32, String>>,
     access: Arc<report_access::Access>,
     legacy_groups: Arc<LegacyGroups>,
     worker_status: auto_import::Status,
@@ -1149,6 +1150,7 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     }
     let app = App {
         realms: Arc::new(realms),
+        item_icons: Arc::new(character_view::load_item_icons(&assets)),
         access: Arc::new(access),
         legacy_groups: Arc::new(legacy_groups),
         root: Arc::new(root),

@@ -3,12 +3,12 @@
 {% block scripts_head %}
 <script src="/static/js/protobuf-7.4.0.min.js"></script>
 <script src="/static/js/pako_deflate-2.1.0.es5.min.js"></script>
-<script type="module" src="/static/character.js?v=5"></script>
+<script type="module" src="/static/character.js?v=6"></script>
 <script type="module" src="/static/gear_tooltip.js?v=3"></script>
 {% endblock scripts_head %}
 
 {% block add_css_file %}
-<link rel="stylesheet" type="text/css" href="/static/character.css?v=5">
+<link rel="stylesheet" type="text/css" href="/static/character.css?v=6">
 {% endblock add_css_file %}
 
 {% block the_main %}
@@ -163,6 +163,7 @@
     </div>
   </section>
 </div>
+<div id="equipment-tooltip" role="tooltip" hidden></div>
 <aside id="tooltip-points" aria-hidden="true" style="display: none;">
   <div class="tooltip-flex">
     <div class="tooltip-sub">
