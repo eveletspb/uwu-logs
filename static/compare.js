@@ -1,3 +1,5 @@
+import {attachClassPicker} from './class-picker.js?v=1';
+
 const SELECT_CLASS = document.getElementById("select-class");
 const SELECT_SPELL = document.getElementById("select-spell");
 const COMPARE_TABLE = document.getElementById("compare-field-table");
@@ -173,6 +175,7 @@ function new_class_selected() {
 
 
 function init() {
+  attachClassPicker(SELECT_CLASS);
   new_class_selected();
 
   document.querySelectorAll("#compare-field-table-headers th").forEach(th => th.addEventListener("click", () => sort_by_column(th)));

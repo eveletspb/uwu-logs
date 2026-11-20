@@ -1,0 +1,76 @@
+.class-picker {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  font-size: 14px;
+}
+.class-picker [hidden] { display: none !important; }
+.class-picker button {
+  display: flex;
+  align-items: center;
+  gap: .55em;
+  border: 1px solid #34445b;
+  border-radius: 6px;
+  background: #16202d;
+  box-shadow: none;
+  color: #e3ebf6;
+  font: inherit;
+  text-align: left;
+}
+.class-picker button::before,
+.class-picker button::after { display: none; }
+.class-picker .class-picker-trigger {
+  min-height: 36px;
+  min-width: 11em;
+  padding: .4em .7em;
+}
+.class-picker .class-picker-trigger::after {
+  content: '';
+  display: block;
+  width: .42em;
+  height: .42em;
+  margin-left: auto;
+  border: solid currentColor;
+  border-width: 0 1px 1px 0;
+  transform: rotate(45deg) translateY(-.15em);
+}
+.class-picker button:focus-visible {
+  outline: 2px solid #67d2c6;
+  outline-offset: -2px;
+}
+.class-picker .class-picker-list {
+  position: absolute;
+  z-index: 52;
+  top: calc(100% + 3px);
+  left: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(18rem, 85vw);
+  max-height: 44vh;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid #34445b;
+  border-radius: 7px;
+  background: #141e2a;
+  box-shadow: 0 8px 24px #0007;
+}
+.class-picker .class-picker-list button {
+  width: 100%;
+  padding: .45em .65em;
+  background: transparent;
+  border-color: transparent;
+}
+.class-picker .class-picker-list button:hover,
+.class-picker .class-picker-list button[aria-selected="true"] { background: #213c46; }
+.class-picker img {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  max-width: 20px;
+  max-height: 20px;
+  padding: 0;
+  margin: 0;
+  border-radius: 4px;
+}
+#controls > .class-picker { grid-area: clss; }
