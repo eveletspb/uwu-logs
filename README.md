@@ -1,245 +1,193 @@
 # RaidLedger
 
-## Updated design
+RaidLedger is a self-hosted combat log analyzer for World of Warcraft 3.3.5a.
+Import a log and browse the raid, boss attempts, and individual player
+performance in your browser. The Rust server handles imports, report storage,
+and exports. Reports are stored on the machine running RaidLedger.
 
-A local raid analytics interface for WoW 3.3.5a with encounter navigation, metric tabs, player search and a visible DPS graph: a raid library, damage and
-healing summaries, readable player tables, and a simple combat-log import flow.
+[Quick start](#quick-start) · [Automatic import](#automatic-import-and-remote-viewing) · [Docker](#docker) · [Report storage](#report-storage-and-migration) · [Downloads](#downloads-and-json-metrics)
 
-### Raid library
+## Explore a raid
 
-Recent reports show the raid name, author, server, start time and player count.
+- **Library and calendar.** Browse raids and find reports by boss, realm,
+  author, or date. When the game server supplies a raid save snapshot, progress
+  can include bosses defeated before you joined. A label such as `≥2/9` means
+  the log confirms at least two of nine kills.
+- **Raid and player reports.** Review kills and wipes, outgoing and incoming
+  damage and healing, useful damage to priority targets, deaths, auras,
+  consumables, and resources. Drill down by spell or target. Player rows show
+  class colors and icons for recognized specializations when the icon pack is
+  installed.
+- **DPS graph.** Drag to select a time range, then choose **Apply period**
+  (**Выделить период**) to filter the report tables. The selection follows the
+  time axis and stays in place when you change the graph interval.
+- **Player timeline.** Select a boss attempt and open a player's timeline for
+  casts, buffs, debuffs, damage, and healing. Drag to zoom or click a track to
+  inspect nearby events. The overview keeps its width during interaction.
+  Dashed aura spans and `≈` mark estimates when the log lacks the application
+  event. The cast count tooltip distinguishes attempts from recorded successes.
+- **Search and comparison.** Find spells by name and compare players of the same
+  class within a report.
 
-![Raid library with raid names and recent reports](showcase/redesign/raid-library.jpg)
+## Quick start
 
-### Raid report
-
-Damage, effective healing and participants at a glance, with controls for
-switching damage and healing views and opening individual player details.
-
-![Raid report with damage and healing summaries and player rankings](showcase/redesign/raid-report.jpg)
-
-### Player timeline
-
-The timeline separates casts, buffs, debuffs, outgoing damage and healing into
-switchable tracks. Select a range in the DPS overview or drag across a track
-to zoom in; use the horizontal scrollbar or Shift + wheel to move through time.
-Spell labels and the time ruler stay visible while scrolling.
-
-![Player timeline with separate cast tracks and a damage overview](showcase/redesign/timeline-overview.jpg)
-
-Search for an ability, hover events for details, or click to pin a shared time
-cursor. The event table shows nearby casts/hits and buffs active at that time.
-Arrow keys move the cursor; Escape or **Весь бой** restores the full encounter.
-Buffs whose application is absent from the log have dashed spans and an
-approximate uptime marker. Auras with no recorded events cannot be recovered.
-
-![Zoomed buff timeline with active aura and nearby events](showcase/redesign/timeline-buffs.jpg)
-
-### Combat-log import
-
-Automatic recording uses DBM boss encounters. Import runs after WoW closes;
-manual import is also available. Reports and log archives are retained.
-
-![Local combat-log import page](showcase/redesign/log-import.jpg)
-
----
-
-<https://uwu-logs.xyz/>
-
-RaidLedger is a Rust combat-log parser and raid viewer for World of Warcraft 3.3.5a, originally forked from UwU Logs.
-
-Supports any Wrath of the Lich King (3.3.5) server.
-
-❤️ Inspired by World of Logs, LegacyPlayers and Warcraft Logs.
-
-## Run RaidLedger
-
-Build with `cargo build --locked --release --jobs 8` and launch from the
-repository directory with `target/release/raidledger`. The server listens on
-`127.0.0.1:5000` by default. `RAIDLEDGER_ROOT` selects the data directory,
-`RAIDLEDGER_BIND` sets the listen address, and `RAIDLEDGER_7Z` selects the
-7-Zip executable for archive imports.
-
-A single raid produces one `LogsDir/<report-id>.uwu` file regardless of
-upload size or the number of log files in the archive. If an upload spans
-different recognized raids, each raid gets its own report and download.
-Reports use independently compressed Zstandard blocks and an index for
-reading encounter ranges and streaming text downloads.
-
-To split an existing mixed report, run `raidledger split-raids <report-id>`.
-The first raid keeps the existing link and the original indexed file is
-preserved in `LogsDir/.raid-split-backups`.
-
-When separate uploads identify the same raid save in their
-`uwu-lockouts.json` manifests, the server updates the first report in
-place. Overlapping combat events are deduplicated with their same-tick
-counts preserved. The previous version is saved in
-`LogsDir/.raid-merge-backups` before the replacement.
-
-The server also opens existing `LogsDir/<report-id>/LOGS_CUT.zstd` reports
-and their metadata in place. Keep `uploads/0file_info` and
-`_report_aliases.json` alongside the report directory when copying a
-legacy installation. The archive metadata identifies older report
-fragments that belong together.
-
-### Local Windows installation
-
-The native launcher targets Windows 10 version 1903 and later.
-
-Place the project next to the game's `Logs` and `WTF` directories. Copy
-`auto-config.example.json` to `auto-config.json`. Set the log location,
-timezone and realm mapping as needed. Build for Windows with
-`cargo build --locked --release --jobs 8` or put an existing
-`raidledger.exe` next to `Start-RaidLedger.ps1`, then run the script from
-PowerShell. The previous `Start-UwU-Logs.ps1` script forwards to the new
-launcher. Use `-NoBrowser` for a background start.
-
-Install `7z.exe` or set `RAIDLEDGER_7Z` for archive imports and remote
-export. Copy `addon/RaidAutoLog` into WoW's `Interface/AddOns` directory.
-It uses DBM-Core callbacks to record raid encounters. RaidLedger waits
-for WoW to exit and the journal to stop changing before importing.
-The original raw journal is retained in the configured `raw_archive`
-folder, and interrupted imports resume from the pending capture.
-
-### Docker
-
-`deploy/rust.Dockerfile` builds the standalone server. The migration
-configuration `deploy/compose.raidledger.yaml` reuses the existing UwU Logs
-volumes for reports, raw archives, uploads, auxiliary databases and game logs.
-For LAN access, put `RAIDLEDGER_HOST` in `.env` and pass that file explicitly
-when starting Compose from the repository root:
+Install stable Rust with Cargo and run these commands from the repository root.
 
 ```sh
-docker compose --env-file .env -f deploy/compose.raidledger.yaml up -d --build --wait
+cargo build --locked --release --jobs 8
+./target/release/raidledger
 ```
 
-Back up the original volumes and separately capture `_report_aliases.json`
-if present. Copy that file into the RaidLedger state volume before startup.
+Open [http://127.0.0.1:5000](http://127.0.0.1:5000). On the **Import** page
+(**Импорт**), choose `WoWCombatLog.txt` from the game's `Logs/` directory or
+upload a ZIP or 7z archive containing combat logs. Enter the realm and wait for
+the report link. In the game, `/combatlog` toggles manual combat logging.
 
-The optional icon pack is available from [the original project](https://drive.google.com/file/d/17DyiCJts01CkFIkd0-G1dVAypIlxd0pP).
+Archive imports require 7-Zip. Set `RAIDLEDGER_7Z` if the executable is installed
+under a different name or outside your `PATH`. To display spell and
+specialization icons, unpack the icon files into `static/icons/` before
+starting the server or building the Docker image. [Upstream icon pack](https://drive.google.com/file/d/17DyiCJts01CkFIkd0-G1dVAypIlxd0pP)
 
-## Showcase
+### Windows
 
-### Top
+Build with `cargo build --locked --release --jobs 8` or place an existing
+`raidledger.exe` in the repository root. Run the launcher in PowerShell.
 
-<https://uwu-logs.xyz/top>
+```powershell
+.\Start-RaidLedger.ps1
+```
 
-![Showcase top](https://raw.githubusercontent.com/Ridepad/uwu-logs/main/static/thumb.png)
+The launcher starts RaidLedger and opens the library. Use
+`.\Start-RaidLedger.ps1 -NoBrowser` for a background start or set
+`RAIDLEDGER_EXE` to use a different executable.
 
-### PvE Statistics
+### Server configuration
 
-<https://uwu-logs.xyz/top_stats>
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `RAIDLEDGER_BIND` | HTTP listen address | `127.0.0.1:5000` |
+| `RAIDLEDGER_ROOT` | Data directory for `LogsDir/`, `uploads/`, and `auto-config.json` | Working directory |
+| `RAIDLEDGER_ASSETS` | Directory containing `templates/` and `static/` | Working directory |
+| `RAIDLEDGER_7Z` | 7-Zip executable | `7z.exe` on Windows, `7zz` on macOS and Linux |
 
-![Showcase PvE statistics](https://raw.githubusercontent.com/Ridepad/uwu-logs/main/showcase/pve_stats.png)
+Use `GET /local-health` to check the server and `GET /local-status` to inspect
+the automatic import and remote export worker.
 
-### Player total and per target spell info
+## Automatic import and remote viewing
 
-![Showcase player spell info](https://raw.githubusercontent.com/Ridepad/uwu-logs/main/showcase/spell_info.png)
+1. Install [RaidAutoLog](addon/RaidAutoLog) in the client's
+   `Interface/AddOns/` directory alongside DBM-Core. The addon uses DBM boss
+   events to start and stop logging, and records raid save details when
+   available.
+2. Copy [auto-config.example.json](auto-config.example.json) to
+   `auto-config.json` in the RaidLedger data directory. Set `source`,
+   `raw_archive`, `timezone`, and `server` for your installation. Relative
+   paths resolve from the data directory. Use `realms` to map in-game realm
+   names to the names used in the library. `poll_seconds` sets how often the
+   worker checks the log, and `settle_seconds` is the quiet period before import.
+3. Point `source` to the combat log under the client's `Logs/` directory, next
+   to `WTF/`. RaidLedger reads the addon's saved variables from `WTF/`. After
+   the game closes and the log finishes writing, RaidLedger imports it and
+   preserves the original journal in `raw_archive`.
 
-### Damage to targets + useful
+Set `remote_export_url` to upload completed captures to another RaidLedger
+instance. Export uses 7-Zip to package the log and raid save data. RaidLedger
+keeps the local report, verifies the report on the destination, and retries
+pending exports after a restart.
 
-![Showcase useful](https://raw.githubusercontent.com/Ridepad/uwu-logs/main/showcase/useful.png)
+Set `reports_url` to open a remote library by default. If it is empty, the
+launcher uses `remote_export_url` when configured. Local report links preserve
+their paths and encounter parameters when redirected.
 
-### Player comparison
+## Docker
 
-![Showcase comparison](https://raw.githubusercontent.com/Ridepad/uwu-logs/main/showcase/compare.png)
-
-### Spell search and overall info
-
-![Showcase spell search](https://raw.githubusercontent.com/Ridepad/uwu-logs/main/showcase/spells.png)
-
-### Consumables
-
-![Showcase consumables](https://raw.githubusercontent.com/Ridepad/uwu-logs/main/showcase/consume.png)
-
-## TODO
-
-- friendly fire: Bloodbolt Splash, ucm, vortex
-- self harm: ucm, Chilled to the Bone
-- site side logs parser - filter forms - guid spell etc
-
-- portal stacks
-- valk grabs + necrotic + defile targets
-
-- fix unlogical buff duration max 30 sec? last combat log entry? filter out long spells - ff hmark
-- if buff not in long_buffs check top50% avg of this buff
-
-- add summary stats like max hit done max hit taken max absorb max grabs
-- 1 tick total - all targets dmg from 1 hurricane tick or typhoon
-
-## Raid progress
-
-The raid library shows boss progress and a readable start date. RaidAutoLog
-records instance progress from the server lock prompt (and extended saved-raid
-API when the server supports it), including bosses killed before you joined.
-Its saved variables are read locally after logout. Reload the client after
-installing or updating the addon.
-
-A partial combat log cannot reveal earlier boss kills. Reports without an
-instance snapshot show a lower bound such as `≥2/9` with a “from log” hint;
-this is not presented as the complete lockout progress. Servers that do not
-provide encounter progress retain this lower-bound display.
-
-## Download a report log
-
-Use **Скачать лог** in the report menu, or request
-`GET /reports/<report_id>/download?format=txt`. The response is a UTF-8
-attachment containing the report's full normalized combat log, including
-all fragments of a combined report. The download covers the full report
-regardless of the encounter selected in the viewer.
-
-Omit `format` to receive the existing `.7z` archive for a standalone report
-when available. Otherwise the endpoint returns the text log.
-Request `GET /reports/<report_id>/download?format=json` for the versioned
-JSON summary. It covers all recorded boss attempts, including wipes, and
-excludes trash and time between attempts. Each encounter has its boss,
-difficulty, zero-based attempt, outcome, duration, viewer path, raid totals
-and players keyed by GUID. The top-level totals and players aggregate those
-attempts. `damage` is outgoing damage including attributed pets, `healing`
-is effective healing including attributed absorbs, `damage_taken` counts
-damage received by the character, and `deaths` counts player `UNIT_DIED`
-events. DPS, HPS and DTPS use the full attempt duration or the sum of all
-attempt durations for the report. Rates are null for zero duration. The response is a single JSON document.
-
-An unknown report returns HTTP 404. An unsupported format returns HTTP 400.
-
-## Automatic remote export
-
-Set `remote_export_url` in the private `auto-config.json` to a RaidLedger server
-URL. Completed captures are uploaded after WoW closes. The original server label and timezone are preserved. Reports are
-checked on the destination before an archive is marked as exported.
-
-Failed exports remain queued and retry after a restart. Original reports,
-raw archives and export checkpoints are retained on disk.
-
-Set `reports_url` to open reports on that server by default. The launcher opens
-its raid library, and local home/library/report URLs redirect there while
-preserving the report path and encounter query. Upload and maintenance endpoints
-continue running locally. When `reports_url` is empty, `remote_export_url` is
-used as the preferred viewer if configured.
-
-## One report per raid lockout
-
-Update `addon/RaidAutoLog/Progress.lua` in the game client and reload the UI.
-The addon records the actual instance save ID and difficulty using the classic
-saved-instance API. Automatic archives carry a small `uwu-lockouts.json`
-manifest. The client and destination server both need this version of the code.
-
-When the save ID matches, pauses, roster changes and client restarts append
-to the same report. Different save IDs, difficulties or reset periods remain
-separate. Without a reliable save ID, the importer keeps its legacy separation
-instead of guessing that two runs share a lockout. Overlapping captures are
-deduplicated without removing legitimate identical hits in the same timestamp.
-
-To combine existing reports known to share a lockout, stop the viewer and run
-the following **inside the project folder**, then restart the viewer:
+For a fresh installation, run the following from the repository root.
 
 ```sh
-./target/release/raidledger merge REPORT_ID_1 REPORT_ID_2 REPORT_ID_3
+docker build -f deploy/rust.Dockerfile -t raidledger .
+docker run -d --name raidledger --restart unless-stopped \
+  -p 127.0.0.1:5000:5000 -v raidledger-data:/data raidledger
 ```
 
-The oldest report ID becomes canonical. The original fragment files are
-retained and the other IDs continue opening the combined report. When a
-native report is replaced, its previous version is linked in
-`LogsDir/.raid-merge-backups`. The report defaults to boss segments so
-overnight pauses do not dilute DPS/HPS.
+The image includes 7-Zip. The `raidledger-data` volume holds reports, settings,
+and import data.
+
+To migrate an existing UwU Logs deployment, use
+[deploy/compose.raidledger.yaml](deploy/compose.raidledger.yaml). Back up the
+existing `uwu-logs_*` volumes before the first start. If you use
+`_report_aliases.json`, copy it to the root of the RaidLedger state volume.
+Set `RAIDLEDGER_HOST` for LAN access and `RAIDLEDGER_PORT` to override the
+default port. To load these settings from `.env`, add `--env-file .env`
+after `docker compose`.
+
+```sh
+docker compose -f deploy/compose.raidledger.yaml up -d --build --wait
+```
+
+## Report storage and migration
+
+- **One report per raid in an upload.** A large log or an archive with multiple
+  log files still produces one report for each recognized raid. For example,
+  AQ40 and BWL in the same upload get separate report links and downloads.
+  [Encounter catalog](config/encounters.json)
+- **Indexed storage.** Each new report is stored in a single
+  `LogsDir/<id>.uwu` file. Independently compressed Zstandard blocks and an
+  index let RaidLedger read just the blocks for an encounter. Full text
+  downloads stream from storage.
+- **Raid save continuity.** Captures tied to the same raid save through the
+  `uwu-lockouts.json` manifest update the original report. RaidLedger
+  deduplicates overlapping captures while preserving separate events recorded
+  at the same timestamp.
+- **Existing reports.** RaidLedger reads legacy report directories containing
+  `LOGS_CUT.zstd` and their metadata in place. When moving an installation by
+  hand, copy `LogsDir/`, `LogsRaw/`, `uploads/0file_info`, and
+  `_report_aliases.json` where present. The upload metadata lets RaidLedger
+  associate older fragments from the same archive.
+
+### Maintenance commands
+
+Run these subcommands with `./target/release/raidledger` from the repository
+root. Set `RAIDLEDGER_ROOT` to use another data directory.
+
+| Subcommand | What it does |
+| --- | --- |
+| `import WoWCombatLog.txt 2026 stable` | Imports a text log with the given year and realm and prints the resulting report IDs. |
+| `summary REPORT_ID` | Prints the JSON summary for all recorded boss attempts. |
+| `split-raids REPORT_ID` | Splits a mixed `.uwu` report by recognized raid. The first raid keeps the original URL, and the old file is backed up in `LogsDir/.raid-split-backups/`. |
+| `merge REPORT_ID_1 REPORT_ID_2` | Joins reports from the same raid, author, and realm. Use it for parts of the same raid save. Old URLs resolve to the oldest report. Replaced data is backed up in `LogsDir/.raid-merge-backups/`. |
+| `reindex-appearance REPORT_ID` | Updates class and specialization metadata in a `.uwu` report. Compressed events are preserved byte for byte. The previous file is backed up in `LogsDir/.raid-appearance-backups/`. |
+
+Stop the server before running `merge`, `split-raids`, or
+`reindex-appearance`. Restart it when the command finishes.
+
+## Downloads and JSON metrics
+
+| Request | Result |
+| --- | --- |
+| `GET /reports/<id>/download?format=txt` | The full normalized UTF-8 combat log. The **Download log** (**Скачать лог**) button uses this format. |
+| `GET /reports/<id>/download?format=json` | A versioned summary with encounter results, durations, raid totals, and players keyed by GUID. |
+| `GET /reports/<id>/download` | The existing `.7z` archive for a standalone legacy report when available. Otherwise it streams text. |
+
+The JSON summary covers recorded boss attempts, including wipes. Its total
+duration is the sum of those attempts. Outgoing damage includes attributed
+pets. Effective healing subtracts overhealing and includes attributed absorbs.
+DPS, HPS, and DTPS are `null` when the duration is zero.
+
+## Migration scope
+
+The Rust migration replaced the Python applications and removed their
+dependency lists. The upstream `/top` leaderboards and `/pve_stats` DPS
+percentiles ran on a separate rankings service and are outside the current
+RaidLedger feature set.
+
+## Development checks
+
+```sh
+cargo fmt --check
+cargo test --locked --jobs 8
+cargo clippy --locked --jobs 8 -- -D warnings
+node test_timeline_model.cjs
+```
+
+RaidLedger is a fork of [UwU Logs](https://github.com/Ridepad/uwu-logs).
+See the [deployment changelog](deploy/CHANGELOG.md) for earlier changes.
