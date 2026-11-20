@@ -733,7 +733,7 @@ function fetch_column(event) {
 
 function push_new_state() {
   const mode = selected_difficuty();
-  const title = `UwU Logs - Top - ${SELECT_BOSS.value} - ${mode}`;
+  const title = `RaidLedger - Top - ${SELECT_BOSS.value} - ${mode}`;
   document.title = title;
 
   const parsed = {

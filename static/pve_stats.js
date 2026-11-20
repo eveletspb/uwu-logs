@@ -190,7 +190,7 @@ function search_changed() {
   if (xrequest.readyState != 4 && xrequest.readyState != 0) return;
 
   const difficulty = CHECKBOX_DIFFICULTY.checked ? 'H' : "N";
-  const title = `UwU Logs - Top - ${SELECT_BOSS.value} - ${SELECT_SIZE.value}${difficulty}`;
+  const title = `RaidLedger - Top - ${SELECT_BOSS.value} - ${SELECT_SIZE.value}${difficulty}`;
   document.title = title;
 
   const parsed = {
