@@ -1,4 +1,4 @@
-import Gear from "./char_parser.js?v=4";
+import Gear from "./char_parser.js?v=5";
 import { SPECS } from "./constants.js?v=240830-1";
 
 const INFO_LOADING_POINTS = document.getElementById("loading-points");
@@ -62,7 +62,8 @@ CHAR_REQUEST.onreadystatechange = () => {
   if (CHAR_REQUEST.status != 200) {
     SECTION_PLAYER_POINTS_WRAP.style.display = "none";
     INFO_LOADING_POINTS.style.display = "none";
-    SPEC_SWAP_WRAP.style.visibility = "hidden";
+    SPEC_SWAP_WRAP.hidden = true;
+    PLAYER_OVERALL_POINTS.parentElement.hidden = true;
     INFO_MISSING_POINTS.style.removeProperty("display");
     CURRENT_CHARACTER.class_i = undefined;
     return;
@@ -110,12 +111,9 @@ const TOOLTIP_ELEMENTS = {
   ".row-dps .td-points":     boss_data => add_point(boss_data["points_dps"]),
 };
 
-function is_landscape() {
-  return window.matchMedia("(orientation: landscape)").matches;
-}
-
 function cell(v, class_name) {
   const td = document.createElement("td");
+  td.setAttribute("role", "cell");
   td.className = class_name;
   td.append(v);
   return td;
@@ -214,9 +212,10 @@ function row_on_enter(event) {
   tooltip_set_values(row);
   tooltip_add_auras_data(row);
   const trRect = row.getBoundingClientRect();
-  TOOLTIP_POINTS.style.top = `${trRect.bottom}px`;
-  TOOLTIP_POINTS.style.left = is_landscape() ? `${trRect.left}px` : 0;
   TOOLTIP_POINTS.style.removeProperty("display");
+  const {offsetWidth, offsetHeight} = TOOLTIP_POINTS;
+  TOOLTIP_POINTS.style.top = `${Math.max(8, Math.min(trRect.bottom, innerHeight - offsetHeight - 8))}px`;
+  TOOLTIP_POINTS.style.left = `${Math.max(8, Math.min(trRect.left, innerWidth - offsetWidth - 8))}px`;
 }
 
 function cell_date(report_ID) {
@@ -230,8 +229,9 @@ function cell_date(report_ID) {
   a.append(date_text);
 
   const cell = document.createElement('td');
+  cell.setAttribute("role", "cell");
   cell.appendChild(a);
-  cell.className = "cell-date";
+  cell.className = "profile-report-date";
 
   return cell;
 }
@@ -247,7 +247,8 @@ function add_dummy_cells(tr) {
 
 function row(boss_name, data) {
   const tr = document.createElement("tr");
-  tr.appendChild(cell(boss_name, "sticky-column"));
+  tr.setAttribute("role", "row");
+  tr.appendChild(cell(boss_name, "profile-boss-name"));
   if (!data["rank_players"]) {
     add_dummy_cells(tr);
     return tr;
@@ -291,15 +292,17 @@ function push_new_state() {
   window.localStorage.setItem("character_spec", CURRENT_CHARACTER.spec);
   CURRENT_CHARACTER.popped = false;
 
-  const url = `?${CURRENT_CHARACTER.to_url_params()}`;
-  history.pushState(null, "", url);
+  const url = `?${CURRENT_CHARACTER.to_url_params()}${location.hash}`;
+  if (url !== location.search + location.hash) history.pushState(null, "", url);
 }
 function refresh_spec_icons() {
   const class_i = CURRENT_CHARACTER.class_i * 4;
   PLAYER_NAME.className = SPECS[class_i][2];
   for (const spec_button of SPEC_BUTTONS) {
     const img_element = spec_button.label.querySelector("img");
-    const icon_name = SPECS[class_i + spec_button.index][1];
+    const [name, icon_name] = SPECS[class_i + spec_button.index];
+    spec_button.label.title = name;
+    spec_button.input.setAttribute("aria-label", name);
     img_element.src = `/static/icons/${icon_name}.jpg`;
   }
 }
@@ -316,12 +319,15 @@ function table_add_new_data(data) {
   const overall_points = add_point(data.overall_points);
   PLAYER_OVERALL_POINTS.textContent = overall_points;
   PLAYER_OVERALL_POINTS.className = points_rank_class(overall_points);
-  PLAYER_OVERALL_RANK.textContent = `(${data.overall_rank ?? 0})`;
+  PLAYER_OVERALL_RANK.textContent = data.overall_rank ? `Место ${data.overall_rank}` : "";
+  PLAYER_OVERALL_POINTS.parentElement.hidden = !data.overall_rank;
+  toggle_more_bosses();
   
-  INFO_MISSING_POINTS.style.display = "none";
+  const hasResults = TBODY_POINTS.rows.length > 0;
+  INFO_MISSING_POINTS.style.display = hasResults ? "none" : "";
   INFO_LOADING_POINTS.style.display = "none";
-  SPEC_SWAP_WRAP.style.removeProperty("visibility");
-  SECTION_PLAYER_POINTS_WRAP.style.removeProperty("display");
+  SPEC_SWAP_WRAP.hidden = false;
+  SECTION_PLAYER_POINTS_WRAP.style.display = hasResults ? "" : "none";
   
   if (data.class_i == CURRENT_CHARACTER.class_i) return;
   
@@ -361,7 +367,9 @@ function toggle_more_bosses(e) {
   } else {
     TBODY_POINTS.classList.add("hide-other-bosses");
   }
-  BUTTON_TOGGLE_MORE_BOSSES.textContent = show ? "Hide other bosses" : "Show other bosses";
+  BUTTON_TOGGLE_MORE_BOSSES.hidden = TBODY_POINTS.rows.length <= 10;
+  BUTTON_TOGGLE_MORE_BOSSES.setAttribute("aria-expanded", String(show));
+  BUTTON_TOGGLE_MORE_BOSSES.textContent = show ? "Свернуть список" : "Показать всех боссов";
 }
 
 function find_value_index(select, option_name) {
@@ -377,6 +385,7 @@ let currentGear;
 function new_character() {
   set_new_player_name();
   set_current_server();
+  INPUT_CHAR.value = CURRENT_CHARACTER.name;
 
   currentGear?.dispose();
   currentGear = new Gear(CURRENT_CHARACTER.server, CURRENT_CHARACTER.name);
@@ -389,8 +398,8 @@ function to_title(string) {
   return string.charAt(0).toUpperCase() + string.substr(1).toLowerCase();
 }
 function new_character_search() {
-  const _character_name = INPUT_CHAR.value.length > 1 ? INPUT_CHAR.value : CURRENT_CHARACTER.name;
-  if (!_character_name) return;
+  const _character_name = INPUT_CHAR.value.trim();
+  if (_character_name.length < 2) return;
   const character_name = to_title(_character_name);
   const character_server = SELECT_SERVER.value;
 
@@ -423,7 +432,6 @@ function init_character() {
     SELECT_SERVER.value = character_server;
     INFO_LOADING_POINTS.style.display = "none";
     document.getElementById("loading-gear").style.display = "none";
-    PLAYER_SEARCH.checked = true;
     INPUT_CHAR.focus();
     return;
   }
@@ -449,10 +457,6 @@ function popstate() {
   new_character();
 }
 
-function invalid_character_name() {
-  return !INPUT_CHAR.value.length || PLAYER_NAME.textContent == INPUT_CHAR.value;
-}
-
 function init() {
   init_character();
   toggle_more_bosses();
@@ -462,29 +466,10 @@ function init() {
   for (const spec_button of SPEC_BUTTONS) {
     spec_button.input.addEventListener("click", () => new_spec(spec_button.index));
   }
-  INPUT_CHAR.addEventListener("keydown", event => {
-    const key = [event.key, event.code];
-    if (key.includes("Space")) {
-      event.preventDefault();
-    } else if (key.includes("Enter")) {
-      if (invalid_character_name()) return;
-      new_character_search();
-    }
-  });
-  INPUT_CHAR.addEventListener("input", event => {
-    if (event.inputType !== "insertFromPaste") return;
+  PLAYER_SEARCH.addEventListener("submit", event => {
     event.preventDefault();
-    INPUT_CHAR.value = event.data.replaceAll(" ", "").slice(0, 12);
-  });
-  PLAYER_SEARCH.addEventListener("change", () => {
-    if (PLAYER_SEARCH.checked) {
-      INPUT_CHAR.value = "";
-      return;
-    }
-    if (invalid_character_name()) return;
     new_character_search();
   });
-  SELECT_SERVER.addEventListener("change", () => new_character_search());
 }
 
 document.readyState !== "loading" ? init() : document.addEventListener("DOMContentLoaded", init);

@@ -851,6 +851,7 @@ impl Index {
         let default = [3, 1, 2, 2, 3, 3, 2, 1, 2, 2][class as usize];
         let selected = selected_spec
             .filter(|value| (1..=3).contains(value))
+            .or_else(|| (detected % 4 != 0).then_some(detected % 4))
             .unwrap_or(default);
         let spec = i32::from(class * 4 + selected);
         let rank = self.points(&PointsQuery {

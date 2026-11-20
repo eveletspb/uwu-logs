@@ -207,6 +207,7 @@ export default class Gear {
     NO_CACHE_INFO.style.display = "none";
     GEAR_OFFLINE.hidden = true;
     LIVE_EQUIPMENT.hidden = true;
+    document.getElementById("live-equipment-character").textContent = "";
     GEAR_WRAP.dataset.server = this.SERVER;
     const loading_timeout = setTimeout(() => {
       GEAR_WRAP.style.display = "none";
@@ -268,16 +269,27 @@ export default class Gear {
   showLiveEquipment(profile) {
     GEAR_WRAP.style.display = "none";
     document.getElementById("live-equipment-character").textContent =
-      [profile.name, `уровень ${profile.level}`, profile.spec].filter(Boolean).join(" · ");
+      [`Уровень ${profile.level}`, profile.spec].filter(Boolean).join(" · ");
     const rows = profile.equipment.map(item => {
-      const row = document.createElement("tr");
+      const row = document.createElement("li");
       row.dataset.itemId = item.itemEntry;
-      const name = item.nameRu || item.name || `#${item.itemEntry}`;
+      const slot = document.createElement("span");
+      slot.className = "equipment-slot";
+      slot.textContent = SLOT_NAMES[item.slot];
+      const name = document.createElement("strong");
+      name.className = QUALITY_COLOR[item.quality] || "";
+      name.textContent = item.nameRu || item.name || `#${item.itemEntry}`;
+      const level = document.createElement("span");
+      level.className = "equipment-level";
+      level.title = `Уровень предмета ${item.itemLevel}`;
+      level.textContent = item.itemLevel;
+      row.append(slot, name, level);
       const effects = item.enchantments.map(effect => effect.nameRu || effect.name).filter(Boolean);
-      for (const [index, value] of [SLOT_NAMES[item.slot], name, item.itemLevel, effects.join(" · ") || "—"].entries()) {
-        const cell = row.insertCell();
-        if (index === 1) cell.className = QUALITY_COLOR[item.quality] || "";
-        cell.textContent = value;
+      if (effects.length) {
+        const enchantments = document.createElement("span");
+        enchantments.className = "equipment-effects";
+        enchantments.textContent = effects.join(" · ");
+        row.append(enchantments);
       }
       return row;
     });

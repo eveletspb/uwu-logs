@@ -3,60 +3,49 @@
 {% block scripts_head %}
 <script src="/static/js/protobuf-7.4.0.min.js"></script>
 <script src="/static/js/pako_deflate-2.1.0.es5.min.js"></script>
-<script type="module" src="/static/character.js?v=4"></script>
+<script type="module" src="/static/character.js?v=5"></script>
 <script type="module" src="/static/gear_tooltip.js?v=3"></script>
 {% endblock scripts_head %}
 
 {% block add_css_file %}
-<link rel="stylesheet" type="text/css" href="/static/character.css?v=260620-1">
+<link rel="stylesheet" type="text/css" href="/static/character.css?v=5">
 {% endblock add_css_file %}
 
 {% block the_main %}
 <main id="character-page" data-armory='{{ ARMORY_SERVERS|tojson }}'>
-<section id="top-player-info">
-  <input id="player-search" type="checkbox">
-  <label id="player-search-label" for="player-search">🔍</label>
-  
-  <div class="search-input">
-    <input id="charname-seach" class="player-name" type="search" maxlength="12" placeholder="Press enter when done">
+<header id="top-player-info">
+  <div class="profile-identity">
+    <div class="profile-title">
+      <h1><a id="player-name">Персонаж</a></h1>
+      <span id="player-server"></span>
+    </div>
+    <p id="live-equipment-character" class="profile-meta"></p>
   </div>
-  <select id="server-select" class="search-input player-server">
-    {% for server in SERVERS %}
-    <option value="{{ server }}">{{ server }}</option>
-    {% endfor %}
-  </select>
-  
-  <div class="static-info player-name">
-    <a id="player-name">.</a>
-  </div>
-  <div id="player-server" class="static-info player-server">.</div>
-  
-  <div id="player-overall">
-    <span id="player-overall-points">.</span>
-    <span id="player-overall-rank">.</span>
-  </div>
-  <div id="spec-wrap">
-    {% for i in range(1,4) %}
-    <input id="spec-{{ i }}-input" type="radio" name="spec">
-    <label id="spec-{{ i }}-label" for="spec-{{ i }}-input"><img></label>
-    {% endfor %}
-  </div>
-</section>
-<div id="wraprwprperweproe">
-  <div id="gear-block">
-    <div id="loading-gear" class="info">Loading gear data...</div>
-    <div id="missing-gear" class="info error" style="display: none;">No gear snapshots found for this character.</div>
+  <form id="player-search" action="/character" method="get">
+    <label>
+      <span>Имя персонажа</span>
+      <input id="charname-seach" name="name" type="search" maxlength="12" placeholder="Например, Sbol" required>
+    </label>
+    <label>
+      <span>Сервер</span>
+      <select id="server-select" name="server">
+        {% for server in SERVERS %}
+        <option value="{{ server }}">{{ server }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">Найти</button>
+  </form>
+</header>
+<div class="profile-grid">
+  <section id="gear-block" class="profile-panel" aria-labelledby="live-equipment-title">
+    <h2 id="live-equipment-title">Экипировка</h2>
+    <div id="loading-gear" class="info" role="status">Загружаем экипировку…</div>
+    <div id="missing-gear" class="info error" style="display: none;">Экипировка для этого персонажа недоступна.</div>
     <div id="gear-offline" class="info error" hidden>Источник экипировки временно недоступен.</div>
-    <section id="live-equipment" hidden aria-labelledby="live-equipment-title">
-      <h2 id="live-equipment-title">Экипировка</h2>
-      <p id="live-equipment-character"></p>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Слот</th><th>Предмет</th><th>Уровень предмета</th><th>Чары и камни</th></tr></thead>
-          <tbody id="live-equipment-items"></tbody>
-        </table>
-      </div>
-    </section>
+    <div id="live-equipment" hidden>
+      <ul id="live-equipment-items"></ul>
+    </div>
     <div id="server-no-cache" class="info error" style="display: none;">Server doesn't have gear cache yet.</div>
     <section id="gear-wrap" style="display: none;">
       <div id="gear-left">
@@ -132,50 +121,49 @@
         {% endfor %}
       </div>
     </section>
-  </div>
-  <div id="loading-points" class="info">Loading raid data...</div>
-  <div id="missing-points" class="info error" style="display: none;">
-    <p>
-      No raid data found for this character.
-    </p>
-    <p>
-      Points are calculated based on 25 man heroic mode for the latest expansion phase of the server.
-    </p>
-  </div>
-  <section id="player-points-wrap" style="display: none;">
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th class="sticky-column">Boss</th>
-            <th>Rank</th>
-            <th>Points</th>
-            <th>Best Dps</th>
-            <th>Dur</th>
-            <th>Kills</th>
-            <th>Date</th>
-          </tr>
-        </thead>
-        <tbody id="points-body">
-        </tbody>
-      </table>
+  </section>
+  <section class="profile-panel" aria-labelledby="profile-ranking-title">
+    <div class="profile-panel-heading">
+      <h2 id="profile-ranking-title">Рейдовый рейтинг</h2>
+      <div id="player-overall" hidden>
+        <span id="player-overall-points"></span>
+        <span id="player-overall-rank"></span>
+      </div>
     </div>
-    <div id="toggle-more-bosses-wrap">
-      <button id="toggle-more-bosses">Show more</button>
+    <div id="spec-wrap" role="group" aria-label="Специализация в рейтинге" hidden>
+      {% for i in range(1,4) %}
+      <input id="spec-{{ i }}-input" type="radio" name="spec">
+      <label id="spec-{{ i }}-label" for="spec-{{ i }}-input"><img alt=""></label>
+      {% endfor %}
+    </div>
+    <div id="loading-points" class="info" role="status">Загружаем рейтинг…</div>
+    <div id="missing-points" class="info" style="display: none;">Для этой специализации пока нет рейдовых результатов.</div>
+    <div id="player-points-wrap" style="display: none;">
+      <div class="table-wrap profile-rank-table" role="region" aria-label="Результаты по боссам" tabindex="0">
+        <table role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th scope="col" role="columnheader">Босс</th>
+              <th scope="col" role="columnheader">Место</th>
+              <th scope="col" role="columnheader">Очки</th>
+              <th scope="col" role="columnheader">DPS</th>
+              <th scope="col" role="columnheader">Время</th>
+              <th scope="col" role="columnheader">Победы</th>
+              <th scope="col" role="columnheader">Отчёт</th>
+            </tr>
+          </thead>
+          <tbody id="points-body" role="rowgroup"></tbody>
+        </table>
+      </div>
+      <button id="toggle-more-bosses" type="button" aria-expanded="false" aria-controls="points-body" hidden>Показать всех боссов</button>
+      <details class="profile-rank-help">
+        <summary>Как считается рейтинг</summary>
+        <p>Очки за бой учитывают лучший результат игрока, место среди всех попыток и отношение DPS к лидеру специализации.</p>
+      </details>
     </div>
   </section>
 </div>
-<div id="rank-info">Rank info
-  <div id="rank-info-tt">
-    <p>DPS rank is based on % dps from top 1.</p> 
-    <p>-</p>
-    <p>Player rank is based on best results from each player.</p>
-    <p>-</p>
-    <p>Raid rank is based on position relative to all logged raids.</p>
-    <p>Can be decreased by other players, if they consistently have better dps than you.</p>
-  </div>
-</div>
-<aside id="tooltip-points" style="display: none;">
+<aside id="tooltip-points" aria-hidden="true" style="display: none;">
   <div class="tooltip-flex">
     <div class="tooltip-sub">
       <table id="table-points">
@@ -217,8 +205,9 @@
       <table id="tooltip-table-auras-buffs" class="auras-table">
         <tbody>
         </tbody>
-      </div>
+      </table>
     </div>
+  </div>
 </aside>
 </main>
 {% endblock the_main %}
