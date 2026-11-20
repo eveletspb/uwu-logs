@@ -173,24 +173,7 @@ pub fn context(
     }
 }
 
-pub fn number(value: i64) -> String {
-    if value == 0 {
-        return String::new();
-    }
-    let digits = value.unsigned_abs().to_string();
-    let mut formatted = if value < 0 {
-        "-".to_owned()
-    } else {
-        String::new()
-    };
-    for (index, digit) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index).is_multiple_of(3) {
-            formatted.push(' ');
-        }
-        formatted.push(digit);
-    }
-    formatted
-}
+pub use raidledger::metrics::formatted_amount as number;
 
 fn metric(value: i64, duration: f64, maximum: i64) -> Value {
     let tenths = (10. * value as f64 / if duration > 0. { duration } else { 1. }) as i64;

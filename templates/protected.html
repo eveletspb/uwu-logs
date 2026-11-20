@@ -3,16 +3,19 @@
 {% block the_main %}
 <main>
   <section id="psw-form" style="padding-left: 10vw;">
-      <p><h3>Logs are private, enter password:</h3></p>
-      <p><input id="password-field" type="text" maxlength="64"/></p>
+      <h3>This report is private.</h3>
+      {% if PASSWORD_CONFIGURED %}
+      <p><label for="password-field">Password</label> <input id="password-field" type="password" maxlength="64"/></p>
       <button id="submit-button">Submit</button>
       <p id="error-field"></p>
+      {% endif %}
   </section>
 </main>
 {% endblock the_main %}
 {% block main_scripts %}
 <script>
 const pwField = document.getElementById("password-field");
+if (pwField) {
 const errorField = document.getElementById("error-field");
 const submitButton = document.getElementById("submit-button");
 
@@ -23,7 +26,9 @@ xhttp.onreadystatechange = () => {
     pwField.value = "";
     window.location.reload();
   } else if (xhttp.status == 401) {
-    errorField.innerText = `Attempts left: ${xhttp.response}`;
+    errorField.textContent = "Incorrect password.";
+  } else if (xhttp.status == 429) {
+    errorField.textContent = "Try again in a minute.";
   }
 }
 
@@ -36,10 +41,15 @@ async function digestMessage(message) {
 }
 
 submitButton.addEventListener('click', () => {
+  if (!window.crypto?.subtle) {
+    errorField.textContent = "Open this page over HTTPS to sign in.";
+    return;
+  }
   digestMessage(pwField.value).then(_hash => {
     xhttp.open("POST", "/pw_validate", true);
     xhttp.send(_hash)
   })
 })
+}
 </script>
 {% endblock main_scripts %}

@@ -1,4 +1,4 @@
-import { CACHE } from "./gear_cache.js?v=240831-1";
+import { gearCache } from "./gear_cache.js?v=3";
 import {
   get_gs,
   is_two_hand,
@@ -30,24 +30,12 @@ const TABLE_STATS_BODY = document.getElementById("table-stats-body");
 const GEAR_SLOTS = Array.from(document.querySelectorAll(".slot"));
 
 const URL_PREFIX_TALENTS = "https://aowow.trinitycore.info/?talent#";
-const URL_PREFIX_ICON = "/static/icons";
 const URL_PREFIX_CHARACTER = "/gear";
 const RELEVANT_PROFS = ["Enchanting", "Blacksmithing"];
 const DEFAULT_NAME_VALUE = {
   specs: ["No spec", "0/0/0"],
   profs: ["No prof", "0"],
 };
-const SERVERS_AVAILABLE_GEAR = [
-  "Icecrown",
-  "Lordaeron",
-  "Onyxia",
-  "Rising-Gods",
-  "WoW-Circle-x1",
-  "WoW-Circle-x4",
-  "WoW-Circle-x5",
-  "WoW-Circle-x100",
-];
-
 const TIMEOUTS = {};
 function throttle(fn, timeout=50) {
   return function(...args) {
@@ -61,7 +49,7 @@ function to_title(string) {
 }
 
 function get_char_data_url(server, name) {
-  return `${URL_PREFIX_CHARACTER}/${server}/${name}`;
+  return `${URL_PREFIX_CHARACTER}/${encodeURIComponent(server)}/${encodeURIComponent(name)}`;
 }
 
 function add_new_stats(all_stats, new_stats) {
@@ -80,11 +68,10 @@ function set_new_gems(slot_element, slot_data) {
   const gems = (slot_data["gems"] ?? []).filter(v => v != 0);
   if (gems.length) slot_element.setAttribute("data-item-gems", gems);
 }
-async function set_new_img(slot_element, icon_name) {
-  const exists = await CACHE.icon_exists(icon_name);
-  if (!exists) icon_name = "undefined";
+async function set_new_img(slot_element, icon_name, cache) {
+  const src = await cache.icon_exists(icon_name);
   const img = slot_element.querySelector("img");
-  img.src = `${URL_PREFIX_ICON}/${icon_name}.jpg`;
+  img.src = src;
 }
 function set_new_ilvl(slot_element, item_data) {
   const span = slot_element.querySelector("span");
@@ -175,13 +162,13 @@ function add_stat_rows(stats) {
   });
 }
 
-function calc_gs() {
+function calc_gs(cache) {
   const slots_gs = Array(18);
   GEAR_SLOTS.forEach(async (slot_element, slot_i) => {
     if (slot_element.classList.contains("hidden")) return;
     
     const item_id = slot_element.getAttribute("data-item-id");
-    const item_data = await CACHE.fetch_item_data(item_id);
+    const item_data = await cache.fetch_item_data(item_id);
     if (!item_data || slot_item_changed(slot_element, item_id)) return;
     
     const gs = get_gs(slot_i, item_data, item_id);
@@ -207,40 +194,46 @@ export default class Gear {
     this.SERVER = server;
     this.NAME = to_title(name);
     this.URL = get_char_data_url(this.SERVER, this.NAME);
+    this.cache = gearCache(server);
+    this.abort = new AbortController();
   }
   init() {
     NO_GEAR_INFO.style.display = "none";
     NO_CACHE_INFO.style.display = "none";
-    if (!SERVERS_AVAILABLE_GEAR.includes(this.SERVER)) {
-      GEAR_WRAP.style.display = "none";
-      LOADING_INFO.style.display = "none";
-      const msg = `${this.SERVER} doesn't have gear cache yet.`
-      console.log(msg);
-      NO_CACHE_INFO.textContent = `${this.SERVER} doesn't have gear cache yet.`;
-      NO_CACHE_INFO.style.removeProperty("display");
-      return;
-    }
-    
+    GEAR_WRAP.dataset.server = this.SERVER;
     const loading_timeout = setTimeout(() => {
       GEAR_WRAP.style.display = "none";
       LOADING_INFO.style.removeProperty("display");
     }, 100);
 
-    fetch(this.URL).then(response => {
+    this.abort.signal.addEventListener("abort", () => clearTimeout(loading_timeout), {once: true});
+    fetch(this.URL, {signal: this.abort.signal}).then(response => {
       clearTimeout(loading_timeout);
+      if (this.abort.signal.aborted) return;
       if (response.ok) {
         this.parse_json(response);
         return;
       }
-      console.log('not found');
       GEAR_WRAP.style.display = "none";
       LOADING_INFO.style.display = "none";
       NO_GEAR_INFO.style.removeProperty("display");
+    }).catch(() => {
+      clearTimeout(loading_timeout);
+      if (this.abort.signal.aborted) return;
+      LOADING_INFO.style.display = "none";
+      GEAR_WRAP.style.display = "none";
+      NO_GEAR_INFO.style.removeProperty("display");
     });
+  }
+  dispose() {
+    this.abort.abort();
+    BUTTON_SET_PREV.removeEventListener("click", this);
+    BUTTON_SET_NEXT.removeEventListener("click", this);
   }
   parse_json(response) {
     response.json().then(data => {
-      console.log(data);
+      if (this.abort.signal.aborted) return;
+      if (!Object.keys(data).length) throw new Error("No gear snapshots");
       this.CHAR_DATA = data;
       this.SET_NAMES = Object.keys(data);
       this.SET_AMOUNT = this.SET_NAMES.length;
@@ -257,7 +250,7 @@ export default class Gear {
       GEAR_WRAP.style.display = "none";
       NO_GEAR_INFO.style.removeProperty("display");
     }).finally(() => {
-      LOADING_INFO.style.display = "none";
+      if (!this.abort.signal.aborted) LOADING_INFO.style.display = "none";
     });
   }
   handleEvent(event) {
@@ -339,20 +332,20 @@ export default class Gear {
       if (!item_id) return;
 
       slot_element.setAttribute("data-item-id", item_id);
-      const item_data = await CACHE.fetch_item_data(item_id);
-      if (!item_data || slot_item_changed(slot_element, item_id)) return;
+      const item_data = await this.cache.fetch_item_data(item_id);
+      if (!item_data || this.abort.signal.aborted || slot_item_changed(slot_element, item_id)) return;
       
       slot_element.classList.remove("hidden");
 
       set_new_enchant(slot_element, slot_data);
       set_new_gems(slot_element, slot_data);
-      set_new_img(slot_element, item_data.icon);
+      set_new_img(slot_element, item_data.icon, this.cache);
       set_new_ilvl(slot_element, item_data);
 
       add_new_stats(stats, item_data.stats);
       this.add_stat_rows(stats);
       
-      this.calc_gs();
+      this.calc_gs(this.cache);
       this.add_ench_stats(stats, slot_element);
       this.add_gem_stats(stats, slot_element, item_data);
     });
@@ -360,7 +353,7 @@ export default class Gear {
   async add_set_stats(stats) {
     const SET = this.get_current_set_data();
     const class_name = SET["class"];
-    const class_sets = await CACHE.fetch_class_set(class_name);
+    const class_sets = await this.cache.fetch_class_set(class_name);
     const gear_ids = Object.values(SET.gear_data).map(i => i.item);
     const equipped_sets = find_equipped_sets(gear_ids, class_sets);
     for (const set_name in equipped_sets) {
@@ -376,7 +369,7 @@ export default class Gear {
   async add_ench_stats(all_stats, slot_element) {
     const ench_id = slot_element.getAttribute("data-item-ench"); 
     if (!ench_id) return;
-    const ench_data = await CACHE.fetch_enchant_data(ench_id);
+    const ench_data = await this.cache.fetch_enchant_data(ench_id);
     add_new_stats(all_stats, ench_data.stats);
     this.add_stat_rows(all_stats);
   }
@@ -387,7 +380,7 @@ export default class Gear {
     if (!socketed_gems) return;
     
     const sbonus = Array.from(item_data.sockets); // copy to remove reference
-    const gem_data_all = socketed_gems.split(',').map(gem_id => CACHE.fetch_enchant_data(gem_id));
+    const gem_data_all = socketed_gems.split(',').map(gem_id => this.cache.fetch_enchant_data(gem_id));
     Promise.allSettled(gem_data_all).then(results => {
       results.forEach(result => {
         const gem_info = result.value;

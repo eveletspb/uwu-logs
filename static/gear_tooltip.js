@@ -1,4 +1,4 @@
-import { CACHE } from "./gear_cache.js?v=240831-1";
+import { gearCache } from "./gear_cache.js?v=3";
 import {
   QUALITY_COLOR,
   ENCHANTABLE,
@@ -33,7 +33,7 @@ function dynamic_ench_row(row, ench_id, class_name) {
   row.className = "loading";
   row.textContent = `Loading ${_type}...`;
   
-  CACHE.fetch_enchant_data(ench_id).then(ench_data => {
+  gearCache().fetch_enchant_data(ench_id).then(ench_data => {
     row.className = class_name;
     const ench_string = ench_data.names[0].replaceAll("+", "");
     const [value, stat] = split_space_once(ench_string);
@@ -191,13 +191,13 @@ async function show_tooltip(e) {
   
   const slot_element = e.target;
   const item_id = slot_element.getAttribute("data-item-id");
-  const item_data = await CACHE.fetch_item_data(item_id);
+  const item_data = await gearCache().fetch_item_data(item_id);
   if (!item_data || slot_item_changed(slot_element, item_id)) return;
 
   const ench_id = slot_element.getAttribute("data-item-ench");
   const gems = slot_element.getAttribute("data-item-gems") ?? "";
   const socket_bonus = slot_element.getAttribute('data-socket-bonus');
-  const class_sets = await CACHE.fetch_class_set(CHAR_CLASS.textContent);
+  const class_sets = await gearCache().fetch_class_set(CHAR_CLASS.textContent);
 
   [
     tooltip_row_item_name(item_data),

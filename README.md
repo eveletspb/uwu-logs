@@ -138,9 +138,12 @@ docker compose -f deploy/compose.raidledger.yaml up -d --build --wait
   `uwu-lockouts.json` manifest update the original report. RaidLedger
   deduplicates overlapping captures while preserving separate events recorded
   at the same timestamp.
+- **Manual uploads.** Identical uploads for the same realm and year resolve to
+  the existing reports. Each original upload is stored once by SHA-256 under
+  `uploads/raidledger-originals/`, with a receipt linking it to each report.
 - **Existing reports.** RaidLedger reads legacy report directories containing
   `LOGS_CUT.zstd` and their metadata in place. When moving an installation by
-  hand, copy `LogsDir/`, `LogsRaw/`, `uploads/0file_info`, and
+  hand, copy `LogsDir/`, `LogsRaw/`, `uploads/`, and
   `_report_aliases.json` where present. The upload metadata lets RaidLedger
   associate older fragments from the same archive.
 
@@ -156,9 +159,10 @@ root. Set `RAIDLEDGER_ROOT` to use another data directory.
 | `split-raids REPORT_ID` | Splits a mixed `.uwu` report by recognized raid. The first raid keeps the original URL, and the old file is backed up in `LogsDir/.raid-split-backups/`. |
 | `merge REPORT_ID_1 REPORT_ID_2` | Joins reports from the same raid, author, and realm. Use it for parts of the same raid save. Old URLs resolve to the oldest report. Replaced data is backed up in `LogsDir/.raid-merge-backups/`. |
 | `reindex-appearance REPORT_ID` | Updates class and specialization metadata in a `.uwu` report. Compressed events are preserved byte for byte. The previous file is backed up in `LogsDir/.raid-appearance-backups/`. |
+| `reindex-difficulty [REPORT_ID ...]` | Recalculates encounter modes in native reports. With no IDs, it checks all reports. It backs up each changed file in `LogsDir/.raid-difficulty-backups/` and preserves the report ID and compressed event blocks. Legacy reports are analyzed when opened. |
 
-Stop the server before running `merge`, `split-raids`, or
-`reindex-appearance`. Restart it when the command finishes.
+Stop the server before running `merge`, `split-raids`, `reindex-appearance`,
+or `reindex-difficulty`. Restart it when the command finishes.
 
 ## Downloads and JSON metrics
 
@@ -179,13 +183,49 @@ Open `/top` to compare useful and total DPS across recorded kills. Filter by
 realm, boss, difficulty, class, specialization, or external buffs. The **Best**
 option keeps the highest-ranked result for each character. The **Points** view
 uses the realm's configured progression phase. The **Speedrun** view uses reports
-with a complete set of kills for the selected raid and difficulty. Its author
-column comes from the report metadata.
+with a complete set of kills for the selected raid and difficulty. New captures
+can supply the dominant raid guild and faction through the updated RaidAutoLog
+add-on. Older logs without this metadata show an empty guild and faction.
 
 Open `/pve_stats` to compare useful DPS percentiles by specialization. The
 calculation uses the best useful DPS per character and day, with at least five
 ranked results per specialization. Both pages are rebuilt from the stored combat
 logs, including legacy reports, and refresh when report files change.
+
+## Character profiles and realm providers
+
+`/character` shows raid points by specialization and can display equipment
+snapshots, talents, GearScore, and WoWSims exports from a configured gear source.
+Copy [realms.example.json](realms.example.json) to `realms.json` under
+`RAIDLEDGER_ROOT` (`/data` in Docker). You can also set `RAIDLEDGER_REALMS` to
+the path of another config file. Restart RaidLedger after editing the file.
+Use the server names that appear in your RaidLedger report IDs.
+
+| Optional field under `servers.<realm>` | Behavior |
+| --- | --- |
+| `rank_api` | Full URL for a POST with `server`, `boss`, `mode`, and the `dps` and `specs` maps keyed by player name. Return a map keyed by player name with `rank`, `percentile`, `from_spec_top1`, and `total_raids_for_spec`. Omit it to compute ranks from the realm's local reports. |
+| `gear_api` | Full GET URL for gear snapshots using `{server}` and `{name}`. Return a JSON object keyed by snapshot timestamp. Each snapshot contains `class`, `race`, `level`, `gear_data`, `specs`, and `profs`. |
+| `gear_assets` | Base URL for gear metadata under `item/<id>.json`, `enchant/<id>.json`, and `icons/<name>.jpg`. |
+| `gear_missing` | Full PUT URL for requesting missing assets. The app supplies the `type` and `id` query parameters. |
+| `armory` | Character link template using `{server}` and `{name}`. The link appears when configured. |
+
+Gear and Armory have no default external provider. Provider calls use the
+platform's `curl`, included in the Docker image. The optional top-level
+`ladder_websocket` specifies the live source for `/ladder`. Use a
+`wss://` URL when serving the page over HTTPS.
+
+## Private reports
+
+Place one report ID per line in `RAIDLEDGER_ROOT/__private.txt` and restart the
+server. Private reports and their aliases are excluded from public lists and
+rankings. Enable password unlock over HTTPS with
+`RAIDLEDGER_PRIVATE_PASSWORD_SHA256` (64 hex characters) and a separate random
+`RAIDLEDGER_PRIVATE_SESSION_TOKEN` (64 hex characters). With either value
+missing, the selected reports stay locked.
+
+Set `RAIDLEDGER_REPORTS_PER_MINUTE` and `RAIDLEDGER_DOWNLOADS_PER_MINUTE` to
+apply optional limits per connection address. A reverse proxy shares its
+address across requests to RaidLedger.
 
 ## Development checks
 

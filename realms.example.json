@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "stable": {},
+    "develop": {},
+    "example": {
+      "rank_api": "https://rank.example.com/{server}/rank",
+      "gear_api": "https://gear.example.com/gear/{server}/{name}",
+      "gear_assets": "https://gear.example.com/static",
+      "gear_missing": "https://gear.example.com/missing",
+      "armory": "https://armory.example.com/character/{server}/{name}"
+    }
+  }
+}

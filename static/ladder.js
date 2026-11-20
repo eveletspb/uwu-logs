@@ -1,3 +1,5 @@
+const LADDER_PAGE = document.getElementById("ladder-page");
+const ARMORY_SERVERS = JSON.parse(LADDER_PAGE.dataset.armory).map(server => server.toLowerCase());
 import {
   SPECS,
 } from "./constants.js?v=240830-1";
@@ -121,10 +123,12 @@ function to_title(s) {
 }
 
 function link(name, server, is_guild) {
-  const type = is_guild ? "guild" : "character";
   const a = document.createElement("a");
-  a.target = "_blank";
-  a.href = `https://armory.warmane.com/${type}/${name}/${server}`;
+  if (!is_guild && ARMORY_SERVERS.includes(server.toLowerCase())) {
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.href = `/armory/${encodeURIComponent(server)}/${encodeURIComponent(name)}`;
+  }
   a.append(name);
   return a;
 }
@@ -293,8 +297,11 @@ function set_ongoing_time() {
 function init_websocket() {
   if (WEBSOCKET.websocket != null) return;
   
-  const ws_host = `wss://${window.location.hostname}:8765`;
-  // const ws_host = `ws://127.0.0.1:8765`;
+  const ws_host = LADDER_PAGE.dataset.websocket;
+  if (!ws_host) {
+    SPAN_STATUS.textContent = "A live ladder source has not been configured.";
+    return;
+  }
   const socket = new WebSocket(ws_host);
   WEBSOCKET.websocket = socket;
 

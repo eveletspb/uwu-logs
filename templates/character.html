@@ -3,8 +3,8 @@
 {% block scripts_head %}
 <script src="/static/js/protobuf-7.4.0.min.js"></script>
 <script src="/static/js/pako_deflate-2.1.0.es5.min.js"></script>
-<script type="module" src="/static/character.js?v=250108-1"></script>
-<script type="module" src="/static/gear_tooltip.js?v=240831-1"></script>
+<script type="module" src="/static/character.js?v=3"></script>
+<script type="module" src="/static/gear_tooltip.js?v=3"></script>
 {% endblock scripts_head %}
 
 {% block add_css_file %}
@@ -12,7 +12,7 @@
 {% endblock add_css_file %}
 
 {% block the_main %}
-<main>
+<main id="character-page" data-armory='{{ ARMORY_SERVERS|tojson }}'>
 <section id="top-player-info">
   <input id="player-search" type="checkbox">
   <label id="player-search-label" for="player-search">🔍</label>

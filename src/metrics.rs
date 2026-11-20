@@ -265,14 +265,17 @@ pub fn dps(
     use crate::combat::Stamp;
     let roster = report.metadata.players.clone();
     let units = report.metadata.units.clone();
+    let player = player.filter(|name| !name.is_empty());
     let selected = player
-        .filter(|name| !name.is_empty())
         .and_then(|name| {
             roster
                 .iter()
                 .find(|(guid, player)| name == *guid || name == *player)
         })
         .map(|(guid, _)| guid);
+    if player.is_some() && selected.is_none() {
+        return Ok(BTreeMap::new());
+    }
     let year = report.id[..2].parse::<u32>().unwrap_or(0) + 2000;
     let mut points = BTreeMap::<u64, i64>::new();
     let mut total_duration = 0u64;
@@ -305,31 +308,56 @@ pub fn dps(
             {
                 return;
             }
-            let offset = event.stamp.relative_to(start, year).max(0) as u64;
+            // The chart's intervals use the logger timestamp truncated to tenths.
+            let offset = (event.stamp.relative_to(start, year)
+                - i64::from(event.stamp.millis % 100)
+                + i64::from(start.millis % 100))
+            .max(0) as u64;
             *points.entry((total_duration + offset) / 1000).or_default() += event.amount;
         })?;
-        total_duration += encounter.duration_millis();
+        total_duration += ((encounter.duration_millis() + 50) / 100 + 1) * 100;
     }
     if points.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let end = total_duration.div_ceil(1000);
+    let end = points.last_key_value().unwrap().0 + 1;
     let format = |seconds: u64| format!("{:02}:{:02}", seconds / 60, seconds % 60);
     let mut output = BTreeMap::new();
     let mut current = 0;
     output.insert(format(0), 0.0);
     for second in 1..=end {
         current += points.get(&(second - 1)).copied().unwrap_or(0);
-        if second == end {
-            current += points.get(&second).copied().unwrap_or(0);
-        }
         if interval == 0 {
-            output.insert(format(second), round(current as f64 / second as f64, 10.0));
-        } else if second.is_multiple_of(interval) || second == end {
-            let width = (second - 1) % interval + 1;
-            output.insert(format(second), round(current as f64 / width as f64, 10.0));
+            output.insert(
+                format(second - 1),
+                round(current as f64 / second as f64, 10.0),
+            );
+        } else if second.is_multiple_of(interval) {
+            output.insert(
+                format(second),
+                round(current as f64 / interval as f64, 10.0),
+            );
             current = 0;
         }
     }
     Ok(output)
+}
+
+pub fn formatted_amount(value: i64) -> String {
+    if value == 0 {
+        return String::new();
+    }
+    let digits = value.unsigned_abs().to_string();
+    let mut formatted = if value < 0 {
+        "-".to_owned()
+    } else {
+        String::new()
+    };
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            formatted.push(' ');
+        }
+        formatted.push(digit);
+    }
+    formatted
 }

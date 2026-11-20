@@ -33,14 +33,19 @@ pub async fn page(
     .await
 }
 
-fn refresh<'a>(app: &'a App, server: &str) -> Result<std::sync::MutexGuard<'a, Index>, Error> {
+pub(crate) fn refresh<'a>(
+    app: &'a App,
+    server: &str,
+) -> Result<std::sync::MutexGuard<'a, Index>, Error> {
     let mut index = app.rankings.lock().map_err(|_| {
         Error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Rankings cache unavailable",
         )
     })?;
-    index.refresh(&app.root, &app.legacy_groups, server)?;
+    index.refresh_public(&app.root, &app.legacy_groups, server, |id| {
+        app.access.public(id)
+    })?;
     Ok(index)
 }
 
@@ -50,7 +55,7 @@ fn result(value: impl serde::Serialize) -> Result<Json<Value>, Error> {
         .map_err(|error| Error::from(std::io::Error::other(error)))
 }
 
-fn validate(valid: bool) -> Result<(), Error> {
+pub(crate) fn validate(valid: bool) -> Result<(), Error> {
     if valid {
         Ok(())
     } else {

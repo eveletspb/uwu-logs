@@ -94,6 +94,7 @@
       min = Math.min(min, value);
       max = Math.max(max, value);
     }
+    if (points.length && points.at(-1)[0] < duration) points.push([duration, null]);
     times = points.map(([seconds]) => seconds);
     chart.data.labels = times.map(format);
     chart.data.datasets[0].data = points.map(([, value]) => value);

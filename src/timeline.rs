@@ -6,7 +6,9 @@ use std::io;
 
 #[derive(Serialize)]
 struct Spell {
+    id: String,
     name: String,
+    color: &'static str,
     icon: Option<&'static str>,
 }
 
@@ -87,7 +89,11 @@ pub fn build(report: &mut Report, encounter: &Encounter, name: &str) -> io::Resu
             result.spells.insert(
                 event.spell.into(),
                 Spell {
+                    id: event.spell.into(),
                     name: event.spell_name.into(),
+                    color: crate::appearance::school(
+                        event.payload.split(',').next().unwrap_or_default(),
+                    ),
                     icon: Some(crate::appearance::spell_icon(event.spell)),
                 },
             );
@@ -102,5 +108,15 @@ pub fn build(report: &mut Report, encounter: &Encounter, name: &str) -> io::Resu
             event.payload.into(),
         ));
     })?;
+    for (id, main) in crate::compare::COMBINED_SPELLS.iter() {
+        if result.spells.contains_key(main)
+            && let Some(data) = result.data.remove(id)
+        {
+            let group = result.data.get_mut(main).unwrap();
+            group.extend(data);
+            group.sort();
+            result.spells.remove(id);
+        }
+    }
     Ok(result)
 }

@@ -764,12 +764,6 @@ class Character {
     report_link.textContent = this.REPORT_ID;
     report_link_wrap.appendChild(report_link)
 
-    const armory_link = document.createElement("a");
-    armory_link.className = "warmane-armory-link";
-    armory_link.target = "_blank";
-    const SERVER = this.REPORT_ID.split("--")[3];
-    armory_link.href = `http://armory.warmane.com/character/${this.NAME}/${SERVER}`;
-    armory_link.textContent = "Armory⇗";
 
     const close = document.createElement("button");
     close.className = "button-close";
@@ -795,7 +789,6 @@ class Character {
 
     const tab_nav = document.createElement("div");
     tab_nav.appendChild(report_link_wrap);
-    tab_nav.appendChild(armory_link);
     tab_nav.appendChild(close);
     label.appendChild(tab_nav);
     label.append(this.NAME);

@@ -1,37 +1,8 @@
 const CONTROLLER = new AbortController();
 
-function fetch_json_options(method, data) {
-  return {
-    body: JSON.stringify(data),
-    method: method,
-    headers: {
-      "Content-Type": "application/json",
-    },
-    signal: CONTROLLER.signal,
-  }
-}
-
-function fetch_json_missing(type, id) {
-  // const item = {
-  //   id: id,
-  //   type: type,
-  // }
-  // const missing_options = fetch_json_options("PUT", item);
-  // return fetch("/missing", missing_options);
-  const url = `/missing?type=${type}&id=${id}`;
-  const options = {
-    method: "PUT",
-  }
-  return fetch(url, options);
-}
-
-function empty_json_promise() {
-  return new Promise(resolve => resolve(undefined));
-  // return new Promise(resolve => resolve({}));
-}
-
 class FetchCache {
-  constructor() {
+  constructor(server) {
+    this.server = server;
     this.id = Date.now();
     this.CACHES = {
       class_set: {},
@@ -62,15 +33,18 @@ class FetchCache {
   }
 
   async _fetch_json(type, id) {
-    const url = `/static/${type}/${id}.json`;
-    const cache_options = {signal: CONTROLLER.signal};
-    const cache_response = await fetch(url, cache_options);
-    if (cache_response.status == 200) {
-      return cache_response.json();
-    }
+    const url = this.asset_url(type, id + ".json");
+    const response = await fetch(url, {signal: CONTROLLER.signal});
+    if (response.ok) return response.json();
+    const local = await fetch(`/static/${type}/${encodeURIComponent(id)}.json`);
+    if (local.ok) return local.json();
+  }
+  asset_url(type, filename) {
+    return `/gear-assets/${encodeURIComponent(this.server)}/${type}/${encodeURIComponent(filename)}`;
   }
   async _fetch_missing_check_exists(type, id) {
-    const missing_response = await fetch_json_missing(type, id);
+    const query = new URLSearchParams({server: this.server, type, id});
+    const missing_response = await fetch(`/missing?${query}`, {method: "PUT"});
     return [200, 201, 409].includes(missing_response.status);
   }
   async _fetch_json_wrap(type, id) {
@@ -83,7 +57,7 @@ class FetchCache {
       if (fetch_try_2) return fetch_try_2;
     } 
 
-    return empty_json_promise();
+    return undefined;
   }
   async _fetch_wrap(type, id) {
     const cache = this.CACHES[type];
@@ -97,11 +71,18 @@ class FetchCache {
     this.CACHES.class_set[class_name] = response.json();
   }
   async _fetch_icon_exists(id) {
-    const fetch_try_1 = await fetch(`/static/icons/${id}.jpg`);
-    if (fetch_try_1.status != 404) return true;
-
-    return await this._fetch_missing_check_exists("icon", id);
+    const file = id + ".jpg";
+    const local = `/static/icons/${encodeURIComponent(file)}`;
+    if ((await fetch(local)).ok) return local;
+    const remote = this.asset_url("icons", file);
+    if ((await fetch(remote)).ok) return remote;
+    if (await this._fetch_missing_check_exists("icon", id) && (await fetch(remote)).ok) return remote;
+    return "/static/icons/undefined.jpg";
   }
 }
 
-export const CACHE = new FetchCache();
+const realms = new Map();
+export function gearCache(server = document.getElementById("gear-wrap")?.dataset.server ?? "") {
+  if (!realms.has(server)) realms.set(server, new FetchCache(server));
+  return realms.get(server);
+}

@@ -47,7 +47,7 @@ function swap_click_wrap(useful_class_name) {
 
 function add_ranks(data) {
   Array.from(document.querySelectorAll("tbody tr")).forEach(tr => {
-    const player_name = tr.querySelector(".player-cell a").textContent.trim();
+    const player_name = tr.querySelector(".player-cell a")?.textContent.trim();
     const rank_data = data[player_name];
     if (!rank_data) return;
 
@@ -97,7 +97,8 @@ function make_rank_data() {
 
   Array.from(document.querySelectorAll("tbody tr")).forEach(tr => {
     const player_cell = tr.querySelector(".player-cell");
-    const name = player_cell.querySelector("a").textContent;
+    const name = player_cell?.querySelector("a")?.textContent.trim();
+    if (!name) return;
     const spec = player_cell.getAttribute("title");
     const dps = tr.querySelector("td.useful.per-sec-cell").textContent.replaceAll(" ", "");
     if (dps == "") return;
@@ -109,11 +110,11 @@ function make_rank_data() {
   return data;
 }
 function send_ranks_request() {
-  const fight_name = document.getElementById("slice-name").textContent;
-  if (IGNORED_ENCOUNTERS.includes(fight_name)) return;
+  const fight_name = document.getElementById("slice-name")?.textContent;
+  if (!fight_name || IGNORED_ENCOUNTERS.includes(fight_name)) return;
 
-  const fight_mode = document.getElementById("slice-tries").textContent.split(" ")[0];
-  if (IGNORED_ENCOUNTER_MODES.includes(fight_mode)) return;
+  const fight_mode = document.getElementById("slice-tries")?.textContent.trim().split(/\s+/)[0];
+  if (!fight_mode || IGNORED_ENCOUNTER_MODES.includes(fight_mode)) return;
 
   const ranks_data = make_rank_data();
   const report_id = window.location.pathname.split("/")[2];
@@ -138,7 +139,7 @@ function init() {
     table_sort_by_th(document.querySelector(`.${TOTAL["useful"]}.sortable`));
   }
 
-  if (!document.getElementById("report-main").hasAttribute("data-local")) send_ranks_request();
+  send_ranks_request();
 
   document.querySelectorAll(".swap-damage").forEach(button => button.addEventListener("click", swap_click_wrap("useful")));
   document.querySelectorAll(".swap-heal").forEach(button => button.addEventListener("click", swap_click_wrap("heal")));

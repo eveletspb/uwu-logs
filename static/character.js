@@ -1,4 +1,4 @@
-import Gear from "./char_parser.js?v=250108-1";
+import Gear from "./char_parser.js?v=3";
 import { SPECS } from "./constants.js?v=240830-1";
 
 const INFO_LOADING_POINTS = document.getElementById("loading-points");
@@ -71,7 +71,7 @@ CHAR_REQUEST.onreadystatechange = () => {
   const j = JSON.parse(CHAR_REQUEST.response);
   
   if (!CURRENT_CHARACTER.spec) {
-    CURRENT_CHARACTER.spec = DEFAULT_SPEC[j.class_i];
+    CURRENT_CHARACTER.spec = j.spec_i ?? DEFAULT_SPEC[j.class_i];
   }
 
   CACHE_CHARACTERS[CURRENT_CHARACTER.json()] = j;
@@ -79,18 +79,7 @@ CHAR_REQUEST.onreadystatechange = () => {
   table_add_new_data(j);
 }
 
-function armory_link_warmane(server) {
-  return name => `https://armory.warmane.com/character/${name}/${server}`;
-}
-function armory_link_rising_gods(name) {
-  return `https://db.rising-gods.de/?profile=eu.rising-gods.${name}`;
-}
-const SERVER_ARMORY_FUNCTIONS = {
-  "Lordaeron": armory_link_warmane("Lordaeron"),
-  "Icecrown": armory_link_warmane("Icecrown"),
-  "Onyxia": armory_link_warmane("Onyxia"),
-  "Rising-Gods": armory_link_rising_gods,
-};
+const ARMORY_SERVERS = JSON.parse(document.getElementById("character-page").dataset.armory).map(server => server.toLowerCase());
 
 function add_point(v) {
   return (v / 100).toFixed(2);
@@ -284,10 +273,10 @@ function set_new_player_name() {
   PLAYER_SERVER.textContent = server;
   PLAYER_NAME.textContent = name;
   document.title = `RaidLedger - Character - ${name} - ${server}`;
-  const armory_function = SERVER_ARMORY_FUNCTIONS[server];
-  if (armory_function) {
-    PLAYER_NAME.href = armory_function(name);
+  if (ARMORY_SERVERS.includes(server.toLowerCase())) {
+    PLAYER_NAME.href = `/armory/${encodeURIComponent(server)}/${encodeURIComponent(name)}`;
     PLAYER_NAME.target = "_blank";
+    PLAYER_NAME.rel = "noopener";
   } else {
     PLAYER_NAME.removeAttribute("href");
     PLAYER_NAME.removeAttribute("target");
@@ -381,14 +370,17 @@ function find_value_index(select, option_name) {
   }
 }
 function set_current_server() {
-  SELECT_SERVER.selectedIndex = find_value_index(SELECT_SERVER, CURRENT_CHARACTER.server);
+  const index = find_value_index(SELECT_SERVER, CURRENT_CHARACTER.server);
+  if (index !== undefined) SELECT_SERVER.selectedIndex = index;
 }
+let currentGear;
 function new_character() {
   set_new_player_name();
   set_current_server();
 
-  const gear = new Gear(CURRENT_CHARACTER.server, CURRENT_CHARACTER.name);
-  gear.init();
+  currentGear?.dispose();
+  currentGear = new Gear(CURRENT_CHARACTER.server, CURRENT_CHARACTER.name);
+  currentGear.init();
   
   fetch_data();
 }
@@ -397,7 +389,8 @@ function to_title(string) {
   return string.charAt(0).toUpperCase() + string.substr(1).toLowerCase();
 }
 function new_character_search() {
-  const _character_name = INPUT_CHAR.value.length > 1 ? INPUT_CHAR.value : PLAYER_NAME.textContent;
+  const _character_name = INPUT_CHAR.value.length > 1 ? INPUT_CHAR.value : CURRENT_CHARACTER.name;
+  if (!_character_name) return;
   const character_name = to_title(_character_name);
   const character_server = SELECT_SERVER.value;
 
@@ -423,15 +416,21 @@ function init_character() {
     character_spec = window.localStorage.getItem("character_spec");
   }
   
+  if (!character_server || find_value_index(SELECT_SERVER, character_server) === undefined) {
+    character_server = SELECT_SERVER.value;
+  }
   if (!character_name || !character_server) {
-    character_name = "Safiyah";
-    character_server = "Lordaeron";
-    character_spec = 3;
+    SELECT_SERVER.value = character_server;
+    INFO_LOADING_POINTS.style.display = "none";
+    document.getElementById("loading-gear").style.display = "none";
+    PLAYER_SEARCH.checked = true;
+    INPUT_CHAR.focus();
+    return;
   }
 
   CURRENT_CHARACTER.name = character_name;
   CURRENT_CHARACTER.server = character_server;
-  CURRENT_CHARACTER.spec = character_spec;
+  CURRENT_CHARACTER.spec = ["1", "2", "3"].includes(character_spec) ? Number(character_spec) : undefined;
 
   new_character();
 }
@@ -442,7 +441,7 @@ function popstate() {
   
   ["name", "server", "spec"].forEach(k => {
     const value = search.get(k);
-    CURRENT_CHARACTER[k] = value;
+    CURRENT_CHARACTER[k] = k === "spec" ? ([1, 2, 3].includes(Number(value)) ? Number(value) : undefined) : value;
   });
 
   CURRENT_CHARACTER.popped = true;

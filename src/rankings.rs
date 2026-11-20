@@ -487,6 +487,7 @@ struct CachedReport {
     fingerprint: (u64, SystemTime),
     fights: BTreeMap<FightKey, Vec<Row>>,
     runs: BTreeMap<FightKey, Run>,
+    characters: BTreeMap<String, (String, u8)>,
 }
 
 fn cached_report(
@@ -575,10 +576,19 @@ fn cached_report(
             if let (Some(start), Some(end)) = (starts[first], ends[last]) {
                 let total = end.relative_to(start, year) as f64 / 1000.0;
                 let segments = bosses.values().map(|i| kills[*i].duration_seconds).sum();
-                let author = id.split("--").nth(2).unwrap_or_default().into();
+                let guild = metadata
+                    .lockout
+                    .as_ref()
+                    .and_then(|lockout| lockout.guild.as_deref())
+                    .unwrap_or("—")
+                    .into();
+                let faction = metadata
+                    .lockout
+                    .as_ref()
+                    .and_then(|lockout| lockout.faction);
                 runs.insert(
                     (raid.name.clone(), mode.into()),
-                    (prefix.clone(), total, segments, author, None),
+                    (prefix.clone(), total, segments, guild, faction),
                 );
             }
         }
@@ -587,6 +597,15 @@ fn cached_report(
         fingerprint,
         fights,
         runs,
+        characters: metadata
+            .players
+            .iter()
+            .filter_map(|(guid, name)| {
+                let class = metadata.classes.get(guid)?;
+                let spec = row_spec(class, metadata.specs.get(guid).copied());
+                (spec < 40).then(|| (name.to_lowercase(), (name.clone(), spec)))
+            })
+            .collect(),
     })
 }
 
@@ -649,9 +668,20 @@ impl Index {
             })
     }
     pub fn refresh(&mut self, root: &Path, groups: &LegacyGroups, server: &str) -> io::Result<()> {
+        self.refresh_public(root, groups, server, |_| true)
+    }
+
+    pub fn refresh_public(
+        &mut self,
+        root: &Path,
+        groups: &LegacyGroups,
+        server: &str,
+        public: impl Fn(&str) -> bool,
+    ) -> io::Result<()> {
         let ids = list_ids(root)?
             .into_iter()
             .filter(|id| !groups.is_fragment(id))
+            .filter(|id| public(id))
             .collect::<BTreeSet<_>>();
         self.reports.retain(|id, _| ids.contains(id));
         for id in ids.into_iter().filter(|id| realm(id) == server) {
@@ -739,39 +769,54 @@ impl Index {
             .collect()
     }
 
+    pub fn raid_rank<'a>(&self, query: &'a RankQuery) -> BTreeMap<&'a str, Rank> {
+        let mut samples = BTreeMap::<u8, Vec<f64>>::new();
+        for row in self.rows(&query.fight.server, &query.fight.key()) {
+            samples
+                .entry(row.spec)
+                .or_default()
+                .push(row.dps(row.useful));
+        }
+        for values in samples.values_mut() {
+            values.sort_by(f64::total_cmp);
+        }
+        query
+            .dps
+            .iter()
+            .filter_map(|(name, dps)| {
+                let dps = dps.as_f64().or_else(|| dps.as_str()?.parse().ok())?;
+                let id = spec_id(query.specs.get(name)?)?;
+                let scores = samples.get(&id).map(Vec::as_slice).unwrap_or_default();
+                Some((name.as_str(), Rank::of(dps, scores)))
+            })
+            .collect()
+    }
+
+    fn point_fights(server: &str) -> &'static [FightKey] {
+        let phase =
+            PHASES.get(server).map_or(
+                "Tier_10",
+                |phase| {
+                    if phase == "Tier_7" { "Tier_3" } else { phase }
+                },
+            );
+        RULES.points.get(phase).unwrap_or(&RULES.points["Tier_10"])
+    }
+
+    fn point_scores(&self, server: &str, key: &FightKey, spec: i32) -> Vec<&Row> {
+        let mut scores = self.rows(server, key);
+        scores.retain(|row| i32::from(row.spec) == spec && row.useful > 0);
+        scores.sort_by(|a, b| b.dps(b.useful).total_cmp(&a.dps(a.useful)));
+        scores
+    }
+
     pub fn points(&self, query: &PointsQuery) -> Vec<(String, f64, i64)> {
-        let phase = PHASES.get(&query.server).map_or("Tier_10", |phase| {
-            if phase == "Tier_7" { "Tier_3" } else { phase }
-        });
+        let spec = query.class_i.0 * 4 + query.spec_i.0;
         let mut points = BTreeMap::<&str, (&str, f64)>::new();
-        for key in RULES.points.get(phase).unwrap_or(&RULES.points["Tier_10"]) {
-            let mut scores = self.rows(&query.server, key);
-            scores.retain(|row| i32::from(row.spec) == query.class_i.0 * 4 + query.spec_i.0);
-            scores.sort_by(|a, b| b.dps(b.useful).total_cmp(&a.dps(a.useful)));
-            let Some(leader) = scores.first().filter(|row| row.useful > 0) else {
-                continue;
-            };
-            let total = scores.len();
-            let players = scores
-                .iter()
-                .map(|row| &row.guid)
-                .collect::<HashSet<_>>()
-                .len()
-                .min(10_000);
-            let mut seen = HashSet::new();
-            for (offset, row) in scores.iter().enumerate() {
-                if seen.insert(&row.guid) {
-                    let player_points = (players as f64 - seen.len() as f64)
-                        / players.saturating_sub(1).max(1) as f64;
-                    let raid_points = if total < 10_000 {
-                        (total - offset - 1) as f64 / total.saturating_sub(1).max(1) as f64
-                    } else {
-                        rank_score(offset + 1)
-                    };
-                    let dps = row.dps(row.useful) / leader.dps(leader.useful);
-                    points.entry(&row.guid).or_insert((&row.name, 0.0)).1 +=
-                        player_points.max(raid_points).max(dps);
-                }
+        for key in Self::point_fights(&query.server) {
+            for score in fight_scores(&self.point_scores(&query.server, key, spec)) {
+                let row = score.row;
+                points.entry(&row.guid).or_insert((&row.name, 0.0)).1 += score.points();
             }
         }
         let mut rows = points.into_values().collect::<Vec<_>>();
@@ -786,6 +831,81 @@ impl Index {
                 )
             })
             .collect()
+    }
+
+    pub fn character(
+        &self,
+        server: &str,
+        name: &str,
+        selected_spec: Option<u8>,
+    ) -> Option<serde_json::Value> {
+        use serde_json::json;
+        let name = name.to_lowercase();
+        let (display_name, detected) = self
+            .reports
+            .iter()
+            .rev()
+            .filter(|(id, _)| realm(id) == server)
+            .find_map(|(_, report)| report.characters.get(&name))?;
+        let class = detected / 4;
+        let default = [3, 1, 2, 2, 3, 3, 2, 1, 2, 2][class as usize];
+        let selected = selected_spec
+            .filter(|value| (1..=3).contains(value))
+            .unwrap_or(default);
+        let spec = i32::from(class * 4 + selected);
+        let rank = self.points(&PointsQuery {
+            server: server.into(),
+            class_i: Numeric(class.into()),
+            spec_i: Numeric(selected.into()),
+        });
+        let overall = rank
+            .iter()
+            .enumerate()
+            .find(|(_, row)| row.0.to_lowercase() == name);
+        let mut fights = Self::point_fights(server)
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        // A realm may run earlier raids alongside its configured ranking tier.
+        fights.extend(
+            self.reports
+                .iter()
+                .filter(|(id, _)| realm(id) == server)
+                .flat_map(|(_, report)| report.fights.keys().cloned()),
+        );
+        let mut bosses = serde_json::Map::new();
+        for key in fights {
+            let rows = self.point_scores(server, &key, spec);
+            let scores = fight_scores(&rows);
+            let label = format!("{} ({})", key.0, key.1);
+            let Some(score) = scores
+                .iter()
+                .find(|score| score.row.name.to_lowercase() == name)
+            else {
+                continue;
+            };
+            let row = score.row;
+            let auras = row
+                .auras
+                .iter()
+                .map(|(id, count, uptime, kind)| format!("{id}/{count}/{uptime}/{kind}"))
+                .collect::<Vec<_>>()
+                .join("#");
+            bosses.insert(label, json!({
+                "rank_players": score.player_rank, "rank_raids": score.raid_rank,
+                "points": score.points() * 10000.0, "dps_max": row.dps(row.useful),
+                "fastest_kill_duration": row.duration, "report_id": format!("{}--{server}",row.report),
+                "raids": rows.iter().filter(|entry| entry.guid == row.guid).count(), "auras": auras,
+                "spec_total_players": scores.len(), "spec_total_raids": rows.len(),
+                "spec_r1_dps": rows[0].dps(rows[0].useful), "points_rank_players": score.player_points * 10000.0,
+                "points_rank_raids": score.raid_points * 10000.0, "points_dps": score.dps_points * 10000.0,
+            }));
+        }
+        Some(json!({
+            "name": display_name, "server": server, "class_i": class, "spec_i": selected,
+            "overall_rank": overall.map(|(index, _)| index + 1),
+            "overall_points": overall.map_or(0, |(_, row)| row.2), "bosses": bosses,
+        }))
     }
 
     pub fn speedruns(&self, query: &SpeedrunQuery) -> Vec<&Run> {
@@ -805,6 +925,107 @@ impl Index {
             runs.sort_by(|a, b| a.1.total_cmp(&b.1));
         }
         runs
+    }
+}
+
+struct FightScore<'a> {
+    row: &'a Row,
+    player_rank: usize,
+    raid_rank: usize,
+    player_points: f64,
+    raid_points: f64,
+    dps_points: f64,
+}
+
+impl FightScore<'_> {
+    fn points(&self) -> f64 {
+        self.player_points
+            .max(self.raid_points)
+            .max(self.dps_points)
+    }
+}
+
+fn fight_scores<'a>(rows: &[&'a Row]) -> Vec<FightScore<'a>> {
+    let Some(leader) = rows.first() else {
+        return Vec::new();
+    };
+    let players = rows
+        .iter()
+        .map(|row| &row.guid)
+        .collect::<HashSet<_>>()
+        .len()
+        .min(10_000);
+    let total = rows.len();
+    let mut seen = HashSet::new();
+    let mut scores = Vec::new();
+    for (offset, row) in rows.iter().enumerate() {
+        if seen.insert(&row.guid) {
+            let player_rank = seen.len();
+            scores.push(FightScore {
+                row,
+                player_rank,
+                raid_rank: offset + 1,
+                player_points: (players.saturating_sub(player_rank) as f64)
+                    / players.saturating_sub(1).max(1) as f64,
+                raid_points: if total < 10_000 {
+                    (total - offset - 1) as f64 / total.saturating_sub(1).max(1) as f64
+                } else {
+                    rank_score(offset + 1)
+                },
+                dps_points: row.dps(row.useful) / leader.dps(leader.useful),
+            });
+        }
+    }
+    scores
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct RankQuery {
+    #[serde(flatten)]
+    pub fight: FightQuery,
+    pub dps: BTreeMap<String, serde_json::Value>,
+    pub specs: BTreeMap<String, serde_json::Value>,
+}
+
+fn spec_id(value: &serde_json::Value) -> Option<u8> {
+    let named = || {
+        let name = value.as_str()?;
+        (0..40).find(|&index| spec(index).is_some_and(|s| s.name.eq_ignore_ascii_case(name)))
+    };
+    value
+        .as_u64()
+        .and_then(|value| u8::try_from(value).ok())
+        .or_else(|| value.as_str()?.parse().ok())
+        .or_else(named)
+        .filter(|&id| eligible_spec(id))
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct Rank {
+    rank: usize,
+    percentile: f64,
+    from_spec_top1: f64,
+    total_raids_for_spec: usize,
+}
+
+impl Rank {
+    fn of(dps: f64, scores: &[f64]) -> Self {
+        let Some(top) = scores.last().filter(|top| **top > 0.0) else {
+            return Self {
+                rank: 1,
+                percentile: 100.0,
+                from_spec_top1: 100.0,
+                total_raids_for_spec: 1,
+            };
+        };
+        let dps = dps + 0.01;
+        let below = scores.partition_point(|score| *score <= dps);
+        Self {
+            rank: scores.len() - below + 1,
+            percentile: (below as f64 / scores.len() as f64 * 10000.0).floor() / 100.0,
+            from_spec_top1: round(dps / top * 100.0, 10.0),
+            total_raids_for_spec: scores.len(),
+        }
     }
 }
 
@@ -901,7 +1122,7 @@ impl TryFrom<Number> for Numeric {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct FightQuery {
     pub server: String,
     pub boss: String,
@@ -1068,6 +1289,7 @@ mod tests {
                     fingerprint: (0, SystemTime::UNIX_EPOCH),
                     fights: BTreeMap::from([(key.clone(), rows)]),
                     runs: BTreeMap::new(),
+                    characters: BTreeMap::new(),
                 },
             );
         }

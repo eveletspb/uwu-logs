@@ -5,7 +5,7 @@
 <link rel="shortcut icon" href="/favicon.ico">
 {% endblock head_meta %}
 {% block scripts_head %}
-<script type="module" src="/static/ladder.js?251011-1" async></script>
+<script type="module" src="/static/ladder.js?v=2" async></script>
 {% endblock scripts_head %}
 {% block add_style %}
 <style>
@@ -103,7 +103,7 @@ td.cell-id {
 {% endblock add_style %}
 
 {% block the_main %}
-<main>
+<main id="ladder-page" data-websocket="{{ LADDER_WEBSOCKET or '' }}" data-armory='{{ ARMORY_SERVERS|tojson }}'>
   <section id="main-table-wrap" style="display: none;">
     <table id="main-table">
       <thead>
@@ -143,8 +143,9 @@ td.cell-id {
   <section id="controls">
     <select id="select-server">
       <option value="all">Any server</option>
-      <option value="lordaeron">Lordaeron</option>
-      <option value="icecrown">Icecrown</option>
+      {% for server in SERVERS %}
+      <option value="{{ server|lower }}">{{ server }}</option>
+      {% endfor %}
     </select>
     <select id="select-size">
       <option value="all">Any size</option>

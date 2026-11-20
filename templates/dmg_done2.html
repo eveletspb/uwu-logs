@@ -2,7 +2,7 @@
 
 {% block scripts_head %}
 <script src="/static/chart-4.1.2.min.js"></script>
-<script src="/static/dps_chart.js?261120-period" defer></script>
+<script src="/static/dps_chart.js?v=4" defer></script>
 {% endblock scripts_head %}
 
 {% block add_style %}
@@ -185,8 +185,8 @@ option {
       {% else %}No pets
       {% endif %}
     </li>
-    <li><a id="warmane-armory-link" href="https://armory.warmane.com/character/{{ SOURCE_NAME }}/{{ SERVER }}" target="_blank">Armory⇗</a></li>
-    <li><a id="points-gear-link" href="/character?name={{ SOURCE_NAME }}&server={{ SERVER }}" target="_blank">Points/Gear⇗</a></li>
+    {% if ARMORY_URL %}<li><a id="armory-link" href="{{ ARMORY_URL }}" target="_blank" rel="noopener">Armory⇗</a></li>{% endif %}
+    <li><a id="points-gear-link" href="{{ CHARACTER_URL }}" target="_blank" rel="noopener">Points/Gear⇗</a></li>
     {% else %}
     {% if OWNER_NAME %}
     <li class="player-name-big">{{ SOURCE_NAME }} (<a class="{{ PLAYER_CLASSES[OWNER_NAME] }}" href="/reports/{{ REPORT_ID }}/player/{{ OWNER_NAME }}/{{ QUERY }}">{{ OWNER_NAME }}</a>)</li>

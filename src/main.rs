@@ -1,15 +1,17 @@
 mod auto_import;
+mod character_view;
 mod player_view;
 mod ranking_view;
+mod report_access;
 mod report_view;
 mod section_view;
 mod upload;
 
 use axum::body::Body;
-use axum::extract::{OriginalUri, Path as UrlPath, Query, State};
+use axum::extract::{FromRequest, OriginalUri, Path as UrlPath, Query, Request, State};
 use axum::http::{StatusCode, header};
 use axum::response::{Html, IntoResponse, Redirect, Response};
-use axum::{Json, Router, routing::get};
+use axum::{Form, Json, Router, routing::get};
 use minijinja::{Environment, context, path_loader};
 use raidledger::combat::CATALOG;
 use raidledger::metrics::aggregate;
@@ -22,7 +24,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio_util::io::{ReaderStream, SyncIoBridge};
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
 #[derive(Clone)]
 struct App {
@@ -30,6 +32,8 @@ struct App {
     templates: Arc<Environment<'static>>,
     uploads: Arc<upload::Uploads>,
     rankings: Arc<std::sync::Mutex<raidledger::rankings::Index>>,
+    realms: Arc<character_view::Realms>,
+    access: Arc<report_access::Access>,
     legacy_groups: Arc<LegacyGroups>,
     worker_status: auto_import::Status,
     viewer: Option<String>,
@@ -73,6 +77,23 @@ async fn blocking<T: Send + 'static>(
     tokio::task::spawn_blocking(work)
         .await
         .map_err(|_| Error(StatusCode::INTERNAL_SERVER_ERROR, "Report worker failed"))?
+}
+
+async fn json_or_form<T: serde::de::DeserializeOwned>(request: Request) -> Result<T, Error> {
+    let (parts, body) = request.into_parts();
+    let bytes = axum::body::to_bytes(body, 2 * 1024 * 1024)
+        .await
+        .map_err(|_| Error(StatusCode::PAYLOAD_TOO_LARGE, "Report query is too large"))?;
+    if let Ok(value) = serde_json::from_slice(&bytes) {
+        return Ok(value);
+    }
+    let request = Request::from_parts(parts, Body::from(bytes));
+    let Form(fields) =
+        Form::<std::collections::BTreeMap<String, String>>::from_request(request, &())
+            .await
+            .map_err(|_| Error(StatusCode::BAD_REQUEST, "Invalid report query"))?;
+    serde_json::from_value(serde_json::json!(fields))
+        .map_err(|_| Error(StatusCode::BAD_REQUEST, "Invalid report query"))
 }
 
 #[derive(Serialize)]
@@ -208,6 +229,7 @@ async fn library(
         for id in list_ids(&app.root)?
             .into_iter()
             .filter(|id| !app.legacy_groups.is_fragment(id))
+            .filter(|id| app.access.public(id))
             .take(100)
         {
             if let Some((_, realm)) = id.rsplit_once("--") {
@@ -254,6 +276,7 @@ async fn library_filter(
         for id in list_ids(&app.root)?
             .into_iter()
             .filter(|id| !app.legacy_groups.is_fragment(id))
+            .filter(|id| app.access.public(id))
         {
             let report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
             let fields = id.splitn(4, "--").collect::<Vec<_>>();
@@ -447,6 +470,7 @@ fn render_calendar(
 struct ReportQuery {
     boss: Option<String>,
     mode: Option<String>,
+    #[serde(default, deserialize_with = "query_attempt")]
     attempt: Option<String>,
     target: Option<String>,
     #[serde(default, deserialize_with = "query_number")]
@@ -457,6 +481,23 @@ struct ReportQuery {
     sc: Option<u64>,
     #[serde(default, deserialize_with = "query_number")]
     fc: Option<u64>,
+}
+
+fn query_attempt<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Attempt {
+        Text(String),
+        Number(i64),
+    }
+    Ok(
+        Option::<Attempt>::deserialize(deserializer)?.map(|value| match value {
+            Attempt::Text(value) => value,
+            Attempt::Number(value) => value.to_string(),
+        }),
+    )
 }
 
 fn query_number<'de, D: serde::Deserializer<'de>>(
@@ -554,9 +595,23 @@ async fn report_page(
     UrlPath(id): UrlPath<String>,
     OriginalUri(uri): OriginalUri,
     Query(query): Query<ReportQuery>,
-) -> Result<Html<String>, Error> {
+) -> Result<Response, Error> {
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
+        if query.attempt.as_deref() == Some("kill")
+            && let [kill] = base_selection(&mut report, &query)?.as_slice()
+        {
+            let mut path = format!("/reports/{}/{}", path_segment(&id), kill.query());
+            if let Some(target) = &query.target {
+                path.push_str(&format!("&target={}", path_segment(target)));
+            }
+            for (key, value) in [("sc", query.sc), ("fc", query.fc)] {
+                if let Some(value) = value {
+                    path.push_str(&format!("&{key}={value}"));
+                }
+            }
+            return Ok((StatusCode::FOUND, [(header::LOCATION, path)]).into_response());
+        }
         let (selected, graph_duration) = select_with_duration(&mut report, &query)?;
         let summary = aggregate(&mut report, &selected)?;
         let specific = query.boss.as_deref().is_some_and(|boss| boss != "all");
@@ -566,6 +621,7 @@ async fn report_page(
             "report_main.html",
             context! { ..common, ..table, ..context! { GRAPH_DURATION => graph_duration } },
         )
+        .map(IntoResponse::into_response)
     })
     .await
 }
@@ -599,9 +655,14 @@ async fn spell_page(
             &view,
             query.target.as_deref(),
         )?;
+        let server = report.id.splitn(4, "--").nth(3).unwrap_or_default();
+        let name = detail.get_attr("SOURCE_NAME").unwrap_or_default();
+        let name = name.as_str().unwrap_or_default();
+        let armory = app.realms.armory_url(server, name);
+        let profile = format!("/character?name={}&server={}", path_segment(name), path_segment(server));
         app.render(
             "dmg_done2.html",
-            context! { ..common, ..detail, ..context! { GRAPH_DURATION => graph_duration } },
+            context! { ..common, ..detail, ..context! { GRAPH_DURATION => graph_duration, ARMORY_URL => armory, CHARACTER_URL => profile } },
         )
     })
     .await
@@ -610,26 +671,35 @@ async fn spell_page(
 #[derive(Deserialize)]
 struct TimelineQuery {
     boss: String,
-    attempt: usize,
+    #[serde(deserialize_with = "query_attempt")]
+    attempt: Option<String>,
     name: String,
 }
 
 async fn casts(
     State(app): State<App>,
     UrlPath(id): UrlPath<String>,
-    Json(query): Json<TimelineQuery>,
+    request: Request,
 ) -> Result<Json<raidledger::timeline::Timeline>, Error> {
+    let query: TimelineQuery = json_or_form(request).await?;
+    let attempt = query
+        .attempt
+        .and_then(|text| text.parse::<isize>().ok())
+        .ok_or(Error(StatusCode::BAD_REQUEST, "Invalid encounter attempt"))?;
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
-        let encounter = report
+        let mut fights = report
             .metadata
             .encounters
             .iter()
-            .find(|encounter| {
-                encounter.boss_slug == query.boss && encounter.attempt == query.attempt
-            })
-            .ok_or(Error(StatusCode::BAD_REQUEST, "Unknown encounter"))?
-            .clone();
+            .filter(|fight| fight.boss_slug == query.boss);
+        let encounter = if attempt < 0 {
+            fights.rev().nth(attempt.unsigned_abs() - 1)
+        } else {
+            fights.find(|fight| fight.attempt == attempt as usize)
+        }
+        .ok_or(Error(StatusCode::BAD_REQUEST, "Unknown encounter"))?
+        .clone();
         Ok(Json(raidledger::timeline::build(
             &mut report,
             &encounter,
@@ -797,8 +867,9 @@ struct DpsQuery {
 async fn dps(
     State(app): State<App>,
     UrlPath(id): UrlPath<String>,
-    Json(query): Json<DpsQuery>,
+    request: Request,
 ) -> Result<Json<std::collections::BTreeMap<String, f64>>, Error> {
+    let query: DpsQuery = json_or_form(request).await?;
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
         let selected = select(&mut report, &query.selection)?;
@@ -826,8 +897,9 @@ async fn comparison(
     State(app): State<App>,
     UrlPath(id): UrlPath<String>,
     Query(query): Query<ReportQuery>,
-    Json(data): Json<CompareQuery>,
+    request: Request,
 ) -> Result<Json<serde_json::Value>, Error> {
+    let data: CompareQuery = json_or_form(request).await?;
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
         let selected = select(&mut report, &query)?;
@@ -866,10 +938,9 @@ struct SpellSearch {
 async fn search_spells(
     State(app): State<App>,
     UrlPath(id): UrlPath<String>,
-    body: axum::body::Bytes,
+    request: Request,
 ) -> Result<Json<std::collections::BTreeMap<String, String>>, Error> {
-    let data = serde_json::from_slice::<SpellSearch>(&body)
-        .map_err(|_| Error(StatusCode::BAD_REQUEST, "Invalid spell filter"))?;
+    let data: SpellSearch = json_or_form(request).await?;
     blocking(move || {
         let mut report = Report::open_group(&app.root, &id, &app.legacy_groups)?;
         Ok(Json(raidledger::compare::spell_search(
@@ -978,7 +1049,7 @@ fn app_env(key: &str, old: &str) -> Option<std::ffi::OsString> {
 }
 
 async fn health() -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "app": "RaidLedger", "local_only": true }))
+    Json(serde_json::json!({ "app": "RaidLedger", "local_only": true, "auto_import_version": 1 }))
 }
 
 #[tokio::main]
@@ -1065,6 +1136,9 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| "127.0.0.1:5000".into());
     let listener = tokio::net::TcpListener::bind(&address).await?;
     let config = auto_import::Config::load(&root)?;
+    let legacy_groups = LegacyGroups::load(&root)?;
+    let realms = character_view::Realms::load(&root)?;
+    let access = report_access::Access::load(&root, &legacy_groups)?;
     let viewer = config.as_ref().and_then(auto_import::Config::viewer);
     let worker_status = Arc::new(std::sync::Mutex::new(serde_json::json!({
         "state": if config.is_some() { "starting" } else { "disabled" }
@@ -1074,7 +1148,9 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         auto_import::start(root.clone(), config, Arc::clone(&worker_status));
     }
     let app = App {
-        legacy_groups: Arc::new(LegacyGroups::load(&root)?),
+        realms: Arc::new(realms),
+        access: Arc::new(access),
+        legacy_groups: Arc::new(legacy_groups),
         root: Arc::new(root),
         templates: Arc::new(templates),
         uploads: Arc::new(upload::Uploads::default()),
@@ -1086,6 +1162,24 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .route("/", get(library))
         .route("/about", get(about))
         .route("/support", get(about))
+        .route(
+            "/character",
+            get(character_view::page).post(character_view::character_post),
+        )
+        .route(
+            "/character/{server}/{name}/{spec}",
+            get(character_view::character_get),
+        )
+        .route("/rank", axum::routing::post(character_view::rank))
+        .route("/gear/{server}/{name}", get(character_view::gear))
+        .route(
+            "/gear-assets/{server}/{kind}/{file}",
+            get(character_view::gear_asset),
+        )
+        .route("/missing", axum::routing::put(character_view::missing))
+        .route("/armory/{server}/{name}", get(character_view::armory))
+        .route("/ladder", get(character_view::ladder))
+        .route("/pw_validate", axum::routing::post(report_access::login))
         .route("/top", get(ranking_view::page).post(ranking_view::top))
         .route(
             "/pve_stats",
@@ -1106,12 +1200,25 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .route("/local-status", get(auto_import::status))
         .route("/upload", get(upload::form).post(upload::receive))
         .route("/upload_progress", get(upload::progress))
+        .route(
+            "/reports",
+            get(|| async { (StatusCode::FOUND, [(header::LOCATION, "/logs_list")]) }),
+        )
+        .route(
+            "/reports/",
+            get(|| async { (StatusCode::FOUND, [(header::LOCATION, "/logs_list")]) }),
+        )
         .route("/reports/{id}/", get(report_page))
         .route(
             "/reports/{id}",
-            get(|UrlPath(id): UrlPath<String>| async move {
-                Redirect::temporary(&format!("/reports/{}/", path_segment(&id)))
-            }),
+            get(
+                |UrlPath(id): UrlPath<String>, OriginalUri(uri): OriginalUri| async move {
+                    let query = uri
+                        .query()
+                        .map_or(String::new(), |query| format!("?{query}"));
+                    Redirect::permanent(&format!("/reports/{}/{query}", path_segment(&id)))
+                },
+            ),
         )
         .route("/reports/{id}/{view}/{player}/", get(spell_page))
         .route("/reports/{id}/{section}/", get(report_section))
@@ -1133,9 +1240,17 @@ async fn serve(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             axum::routing::post(players_classes),
         )
         .nest_service("/static", ServeDir::new(assets.join(Path::new("static"))))
+        .route_service(
+            "/favicon.ico",
+            ServeFile::new(assets.join("static/favicon.ico")),
+        )
         .layer(axum::middleware::from_fn_with_state(
             app.clone(),
             auto_import::viewer_redirect,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            app.clone(),
+            report_access::report,
         ))
         .with_state(app);
     eprintln!("Listening on {address}");

@@ -49,8 +49,12 @@ function add_targets(targets) {
   TARGET_SELECT.innerHTML = "";
   TARGET_SELECT.style.display = object_is_empty(targets) ? "none" : "";
   TARGET_SELECT.appendChild(new_option("all", "Any target"));
-  for (const guid in targets) {
-    TARGET_SELECT.appendChild(new_option(guid, targets[guid]));
+  for (const [name, entries] of Object.entries(targets)) {
+    if (object_is_empty(entries)) continue;
+    const group = document.createElement("optgroup");
+    group.label = name;
+    for (const [guid, target] of Object.entries(entries)) group.appendChild(new_option(guid, target));
+    TARGET_SELECT.appendChild(group);
   }
 }
 
@@ -72,7 +76,7 @@ function new_table_cell(value, class_name) {
 function player_name_cell(player_name) {
   const a = document.createElement("a");
   a.className = SELECT_CLASS.value;
-  a.href = `${PLAYER_LINK}${player_name}/${window.location.search}`;
+  a.href = `${PLAYER_LINK}${encodeURIComponent(player_name)}/${window.location.search}`;
   a.target = "_blank";
   a.append(player_name);
 
@@ -107,7 +111,7 @@ function populate_table() {
 
   const _cache = get_targets_cache();
   const parsed_json = _cache[TARGET_SELECT.value];
-  if (!parsed_json || parsed_json.PLAYERS.length == 0) {
+  if (!parsed_json || parsed_json.PLAYERS.length == 0 || !SELECT_SPELL.value) {
     LOADING_SECTION.className = "no-players";
     return;
   }
@@ -140,7 +144,7 @@ function display_new_data(parsed_json) {
   TARGET_SELECT.value = current_target;
   if (TARGET_SELECT.value == "") TARGET_SELECT.value = "all";
   SELECT_SPELL.value = current_spell;
-  if (SELECT_SPELL.value == "") SELECT_SPELL.value = SELECT_SPELL.firstElementChild.value;
+  if (SELECT_SPELL.value == "" && SELECT_SPELL.firstElementChild) SELECT_SPELL.value = SELECT_SPELL.firstElementChild.value;
 
   populate_table();
 }
