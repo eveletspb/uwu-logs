@@ -1,4 +1,4 @@
-import { showLiveEquipment } from "./live_equipment.js?v=1";
+import { showLiveEquipment } from "./live_equipment.js?v=2";
 import { gearCache } from "./gear_cache.js?v=3";
 import {
   get_gs,

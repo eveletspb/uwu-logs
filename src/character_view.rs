@@ -339,9 +339,9 @@ struct LiveItem {
     #[serde(default)]
     spells: Vec<LiveEffect>,
     #[serde(default)]
-    enchantments: Vec<LiveEffect>,
+    enchantments: Vec<LiveEnchantment>,
     #[serde(default)]
-    random_property_enchantments: Vec<LiveEffect>,
+    random_property_enchantments: Vec<LiveEnchantment>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -349,6 +349,23 @@ struct LiveItem {
 struct LiveEffect {
     name: String,
     name_ru: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct LiveEnchantment {
+    #[serde(flatten)]
+    name: LiveEffect,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    effects: Vec<EnchantmentBonus>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EnchantmentBonus {
+    #[serde(rename = "type")]
+    kind: u8,
+    amount: i32,
+    spell_id: u32,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -429,7 +446,8 @@ mod gear_tests {
             "equipment": [{"slot": 0, "itemEntry": 16939, "name": "Helm",
                 "itemLevel": 76, "quality": 4, "instanceGuid": 12345, "displayId": 34367,
                 "stats": [{"type": 3, "value": 27}],
-                "enchantments": [{"name": "Hit rating", "nameRu": "Рейтинг меткости", "id": 3754}]}]
+                "enchantments": [{"name": "Hit rating", "nameRu": "Рейтинг меткости", "id": 3754,
+                    "effects": [{"type": 5, "amount": 10, "spellId": 31}]}]}]
         }))
         .unwrap();
         let public = to_value(profile).unwrap();
@@ -441,6 +459,10 @@ mod gear_tests {
         assert_eq!(
             public["equipment"][0]["enchantments"][0]["nameRu"],
             "Рейтинг меткости"
+        );
+        assert_eq!(
+            public["equipment"][0]["enchantments"][0]["effects"],
+            json!([{"type": 5, "amount": 10, "spellId": 31}])
         );
         assert!(public["equipment"][0].get("displayId").is_none());
         assert!(public.get("accountId").is_none());
