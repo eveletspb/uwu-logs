@@ -379,7 +379,8 @@ impl Worker {
                         String::from_utf8_lossy(&result.stderr).trim()
                     )));
                 }
-                File::open(&staging)?.sync_all()?;
+                // Windows requires a writable handle to flush the archive.
+                File::options().write(true).open(&staging)?.sync_all()?;
                 write_json(&queue.join("capture.json"), &capture)?;
                 fs::rename(staging, &zip)?;
             }
