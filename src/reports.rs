@@ -6,7 +6,7 @@ use crate::storage::{ReportFile, ReportWriter, read_event};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -1147,8 +1147,9 @@ fn build_partitions(
         .map(|part| {
             let source = ReportFile::open(File::open(original)?)?;
             let mut reader = BufReader::new(source.into_range_reader(part.ranges)?);
-            let buffer = std::str::from_utf8(reader.fill_buf()?).map_err(io::Error::other)?;
-            let first = buffer
+            let mut first_event = String::new();
+            reader.read_line(&mut first_event)?;
+            let first = first_event
                 .split_once(',')
                 .and_then(|(stamp, _)| Stamp::parse(stamp))
                 .ok_or_else(|| io::Error::other("raid partition has no starting event"))?;
@@ -1160,7 +1161,7 @@ fn build_partitions(
             let (staged, file) = Staged::create(directory)?;
             let (_, _, lockout) = build_native(
                 file,
-                [Ok(reader)],
+                [Ok(BufReader::new(first_event.as_bytes().chain(reader)))],
                 year,
                 realm,
                 manifest,
