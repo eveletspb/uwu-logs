@@ -161,6 +161,33 @@ impl Manifest {
             },
         })
     }
+
+    pub fn identify_partition(
+        &self,
+        metadata: &Metadata,
+        realm: &str,
+        year: u32,
+        stamps: (Stamp, Stamp),
+        timezone: &str,
+    ) -> Option<Lockout> {
+        let players = self
+            .records
+            .iter()
+            .filter(|row| row.server.eq_ignore_ascii_case(realm))
+            .map(|row| row.player.to_ascii_lowercase())
+            .collect::<BTreeSet<_>>();
+        let mut matches = players
+            .iter()
+            .filter(|name| {
+                metadata
+                    .players
+                    .values()
+                    .any(|player| player.eq_ignore_ascii_case(name))
+            })
+            .filter_map(|name| self.identify(metadata, name, realm, year, stamps, timezone));
+        let lockout = matches.next()?;
+        matches.next().is_none().then_some(lockout)
+    }
 }
 
 pub fn epoch(stamp: Stamp, year: u32, timezone: &str) -> Option<u64> {

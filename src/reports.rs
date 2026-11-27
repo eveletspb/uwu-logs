@@ -1239,6 +1239,7 @@ fn build_native(
     let mut normalized = String::new();
     let mut first = None;
     let mut last = None;
+    let partitioned = existing.is_some();
     let (existing, identified_author) = existing.map_or((None, None), |(fights, author)| {
         (Some(fights), Some(author.to_owned()))
     });
@@ -1313,14 +1314,23 @@ fn build_native(
     let author =
         author.or_else(|| manifest.and_then(|(manifest, _)| manifest.author(&metadata, realm)));
     if let Some((manifest, timezone)) = manifest {
-        metadata.lockout = manifest.identify(
-            &metadata,
-            author.as_deref().unwrap_or("Unknown"),
-            realm,
-            year,
-            (first, last.unwrap_or(first)),
-            timezone,
-        );
+        let stamps = (first, last.unwrap_or(first));
+        metadata.lockout = manifest
+            .identify(
+                &metadata,
+                author.as_deref().unwrap_or("Unknown"),
+                realm,
+                year,
+                stamps,
+                timezone,
+            )
+            .or_else(|| {
+                if partitioned {
+                    manifest.identify_partition(&metadata, realm, year, stamps, timezone)
+                } else {
+                    None
+                }
+            });
     }
     if provenance.0.is_some() {
         metadata.lockout = provenance.0;
